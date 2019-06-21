@@ -1,0 +1,41 @@
+{
+  "//1": "describes your app and its dependencies",
+  "//2": "https://docs.npmjs.com/files/package.json",
+  "//3": "updating this file will download and update your packages",
+  "name": "emote-server",
+  "version": "0.0.1",
+  "description": "Server for manipulating gifs and uploading new ones",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": "8.6.0"
+  },
+  "repository": {
+    "url": "https://glitch.com/edit/#!/yentis-server"
+  },
+  "license": "MIT",
+  "keywords": [
+    "node",
+    "glitch",
+    "express"
+  ],
+  "devDependencies": {},
+  "author": "",
+  "dependencies": {
+    "base-64": "^0.1.0",
+    "body-parser": "^1.19.0",
+    "buffer-to-stream": "^1.0.0",
+    "canvas": "^2.5.0",
+    "express": "^4.17.1",
+    "gifencoder": "^2.0.1",
+    "gifsicle-stream": "^0.3.1",
+    "gifwrap": "^0.7.5",
+    "github-api": "^3.2.2",
+    "jimp": "^0.6.4",
+    "pug": "^2.0.4",
+    "request": "^2.88.0",
+    "winston": "^3.2.1"
+  }
+}

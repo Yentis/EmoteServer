@@ -1,0 +1,36 @@
+html
+    head
+        title Upload a new emote
+        link(rel='stylesheet' href='css/style.css')
+    body
+        h1 Upload a new emote
+
+        form(action='/' method='POST')
+            label(for='file') Select your emote (png or gif):
+            input(name='file' id='file' type='file' accept='.png,.gif')
+            label(for='emotename') Emote name:
+            input(name='emotename' id='emotename' placeholder='EmoteNameHere' type='text')
+            input(type='submit' id='submit')
+
+        p(id='message')= message
+        
+        div
+            h2 Rules
+            h3 &lt;CharacterName&gt;&lt;Modifiers&gt;&lt;Action&gt;
+            h3 Words to use for actions
+            p See https://yentis.github.io/emotes to find the words being used for a certain action, if none exist you can choose for yourself.
+            h3 Finding character names
+            p If you don't know what the character in the image is called you can try reverse image searching your emote.
+            h3 Duplicates
+            p Just append a number. If emote PepoYay already exists name your emote PepoYay2
+            h3 Background
+            p Emote backgrounds should always be transparent, even for gifs.
+            h3 Examples:
+            div(class="example")
+                img(src="https://yentis.github.io/emotes/images/175.png")
+                p KumiHeart
+            div(class="example")
+                img(src="https://yentis.github.io/emotes/images/90.png")
+                p BlobHyperSweat
+    script(src='js/jquery-3.3.1.min.js')
+    script(src='js/script.js')
