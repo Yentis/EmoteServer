@@ -2,12 +2,28 @@
   "//1": "describes your app and its dependencies",
   "//2": "https://docs.npmjs.com/files/package.json",
   "//3": "updating this file will download and update your packages",
-  "name": "emote-server",
+  "name": "yentis-server",
   "version": "0.0.1",
-  "description": "Server for manipulating gifs and uploading new ones",
+  "description": "Server for Yentis",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
+  },
+  "dependencies": {
+    "base-64": "^0.1.0",
+    "buffer-to-stream": "^1.0.0",
+    "express": "^4.16.4",
+    "gifencoder": "^2.0.1",
+    "gifwrap": "^0.9.0",
+    "github-api": "^3.3.0",
+    "jimp": "^0.8.5",
+    "pixel-util": "^0.0.2",
+    "promise-queue": "^2.2.5",
+    "pug": "^2.0.4",
+    "requestify": "^0.2.5",
+    "winston": "^3.2.1",
+    "winston-daily-rotate-file": "^4.2.1",
+    "gifsicle-stream": "^1.0.0"
   },
   "engines": {
     "node": "8.6.0"
@@ -21,21 +37,5 @@
     "glitch",
     "express"
   ],
-  "devDependencies": {},
-  "author": "",
-  "dependencies": {
-    "base-64": "^0.1.0",
-    "body-parser": "^1.19.0",
-    "buffer-to-stream": "^1.0.0",
-    "canvas": "^2.5.0",
-    "express": "^4.17.1",
-    "gifencoder": "^2.0.1",
-    "gifsicle-stream": "^0.3.1",
-    "gifwrap": "^0.7.5",
-    "github-api": "^3.2.2",
-    "jimp": "^0.6.4",
-    "pug": "^2.0.4",
-    "request": "^2.88.0",
-    "winston": "^3.2.1"
-  }
+  "author": ""
 }
