@@ -3,6 +3,7 @@
 // init project
 const Gifsicle = require('gifsicle-stream');
 const request = require('request');
+const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
 const base64 = require('base-64');
@@ -21,6 +22,11 @@ const logger = winston.createLogger({
   ]
 });
 
+// we've started you off with Express, 
+// but feel free to use whatever libs or frameworks you'd like through `package.json`.
+
+// http://expressjs.com/en/starter/static-files.html
+// Add headers
 app.use(function(req, res, next) {
   res.setHeader('Access-Control-Allow-Origin', 'https://discordapp.com');
   res.setHeader('Access-Control-Allow-Methods', 'POST');
@@ -34,6 +40,7 @@ app.get('/test', (req, res) => {
   res.render('test');
 });
 
+// http://expressjs.com/en/starter/basic-routing.html
 app.get("/", (request, response) => {
   response.sendStatus(200);
 });
@@ -64,15 +71,20 @@ app.post('/commit', jsonParser, function(req, res) {
     .then((emoteList) => {
     logger.log('info', 'Got emote list');
     let file = processData(req.body, JSON.parse(emoteList));
-    logger.log('info', 'Processed emote data');
-    commitEmote(file)
-      .then(() => {
-      logger.log('info', 'Emote added');
-      res.end('ok');
-    }).catch(err => {
-      logger.log('warn', 'Failed to add emote', err);
-      res.end(err.toString());
-    });
+    if (file.err) {
+      logger.log('warn', 'Failed to process data', file.err);
+      res.end(file.err.toString());
+    } else {
+      logger.log('info', 'Processed emote data');
+      commitEmote(file)
+        .then(() => {
+        logger.log('info', 'Emote added');
+        res.end('ok');
+      }).catch(err => {
+        logger.log('warn', 'Failed to add emote', err);
+        res.end(err.toString());
+      });
+    };
     }).catch(err => {
     logger.log('warn', 'Failed to get emote list', err);
     res.end(err.toString());
@@ -106,6 +118,9 @@ function processData(data, emotes) {
 
   emotes[emoteNumber] = data.emoteName + data.extension;
   let newJson = JSON.stringify(emotes);
+  if (newJson === undefined) {
+    return {err: "A problem occurred while adding your emote, please check your file."};
+  }
 
   return {
     filename: fileInfo.emoteBasePath + emoteNumber + data.extension,
@@ -155,32 +170,43 @@ app.post('/modifygif', jsonParser, (req, res) => {
 });
 
 function getCommands(options) {
-  let normalCommands = [];
-  let specialCommands = [];
-  let priorityCommands = ['-U'];
+  let normal = [];
+  let special = [];
+  let priority = [{name: '-U'}];
+  let command = {};
 
   options.forEach((option) => {
+    command = {};
     switch (option[0]) {
       case 'resize':
-        priorityCommands.push('--scale');
-        priorityCommands.push(option[1]);
+        command.name = '--scale';
+        command.param = option[1];
+        priority.push(command);
+        break;
+      case 'reverse':
+        command.name = '#-1-0';
+        priority.push(command);
         break;
       case 'flip':
-        normalCommands.push('--flip-horizontal');
+        command.name = '--flip-horizontal';
+        normal.push(command);
         break;
       case 'flap':
-        normalCommands.push('--flip-vertical');
+        command.name = '--flip-vertical';
+        normal.push(command);
         break;
       case 'speed':
-        normalCommands.push('-d' + Math.max(2, parseInt(option[1])));
+        command.name = '-d' + Math.max(2, parseInt(option[1]));
+        normal.push(command);
         break;
       case 'hyperspeed':
-        normalCommands.push('-I');
+        command.name = '-I';
+        normal.push(command);
         break;
       case 'rotate':
-      case 'reverse':
-        specialCommands.push(option[0]);
-        specialCommands.push(option[1]);
+        command.name = option[0];
+        command.param = option[1];
+        special.push(command);
         break;
       case 'spin':
       case 'spinrev':
@@ -195,13 +221,14 @@ function getCommands(options) {
           else if (speedName === 'hyper') speed = 2;
         }
 
-        specialCommands.push(option[0]);
-        specialCommands.push(speed);
+        command.name = option[0];
+        command.param = speed;
+        special.push(command);
         break;
     }
   });
 
-  return [priorityCommands, specialCommands, normalCommands];
+  return {priority, special, normal};
 }
 
 function processCommands(data) {
@@ -210,21 +237,21 @@ function processCommands(data) {
     let buffer = data.url;
     
     //We resize pngs through the canvas
-    if(fileType === 'png') {
-      let size = data.commands[0][2];
-      processSpecialCommands({data: buffer, commands: data.commands[1], fileType: fileType, size: size})
+    if (fileType === 'png') {
+      let size = data.commands.priority[1].param;
+      processSpecialCommands({data: buffer, commands: data.commands.special, fileType: fileType, size: size})
         .then(buffer => {
-        processNormalCommands(buffer, data.commands[2])
+        processNormalCommands(buffer, data.commands.normal)
           .then(buffer => resolve(buffer))
           .catch(err => reject(err));
       }).catch(err => reject(err));
     } else {
       //Resize and unoptimize
-      modifyGif(buffer, data.commands[0])
+      modifyGif(buffer, data.commands.priority)
         .then(buffer => {
-        processSpecialCommands({data: buffer, commands: data.commands[1], fileType: fileType})
+        processSpecialCommands({data: buffer, commands: data.commands.special, fileType: fileType})
           .then(buffer => {
-          processNormalCommands(buffer, data.commands[2])
+          processNormalCommands(buffer, data.commands.normal)
             .then(buffer => resolve(buffer))
             .catch(err => reject(err));
         }).catch(err => reject(err));
@@ -235,7 +262,14 @@ function processCommands(data) {
 
 function modifyGif(data, options) {
   return new Promise((resolve, reject) => {
-    let gifProcessor = new Gifsicle(options);
+    let gifsicleParams = [];
+    options.forEach((option) => {
+      gifsicleParams.push(option.name);
+      if (option.param) {
+        gifsicleParams.push(option.param);
+      }
+    });
+    let gifProcessor = new Gifsicle(gifsicleParams);
     let readStream;
     
     if (Buffer.isBuffer(data)) readStream = toStream(data);
@@ -261,18 +295,18 @@ function processSpecialCommands(options) {
       let currentBuffer = options.data;
       
       logger.log('info', 'Commands count: ' + commands.length);
-      for (let i = 0, p = Promise.resolve(); i < commands.length - 1; i += 2) {
+      for (let i = 0, p = Promise.resolve(); i < commands.length; i++) {
         p = p.then(_ => new Promise((resolve, reject) => {
           processSpecialCommand({
-            name: commands[i], 
-            value: parseInt(commands[i + 1]), 
+            name: commands[i].name, 
+            value: parseInt(commands[i].param), 
             buffer: currentBuffer, 
-            type: options.fileType,
+            type: i === 0 ? options.fileType : 'gif',
             size: options.size || 32,
-            isResized: i > 1
+            isResized: i > 0
           }).then(buffer => {
             currentBuffer = buffer;
-            if (i === commands.length - 2) {
+            if (i === commands.length - 1) {
               mainResolve(currentBuffer);
             } else resolve();
           }).catch(err => reject(err));
@@ -300,9 +334,6 @@ function processSpecialCommand(command) {
       case 'rotate':
         gifmodify.rotateGIF(command.buffer, command.value).then(buffer => resolve(buffer)).catch(err => reject(err));
         break;
-      case 'reverse':
-        gifmodify.reverseGIF(command.buffer).then(buffer => resolve(buffer)).catch(err => reject(err));
-        break;
       default:
         resolve(command.buffer);
         break;
@@ -317,7 +348,7 @@ function processNormalCommands(data, commands) {
         .then((buffer) => {
         //an asterisk, signifying info data
         if (buffer[0] === 42) {
-          commands = trimInfoTag(commands);
+          commands = commands.filter(trimInfoTag);
           commands = removeEveryOtherFrame(2, commands, buffer);
           modifyGif(data, commands)
             .then((buffer) => {
@@ -329,24 +360,19 @@ function processNormalCommands(data, commands) {
   });
 }
 
-function trimInfoTag(commands) {
-  let index = commands.indexOf('-I');
-  if (index !== -1) {
-    commands.splice(index, 1);
-  }
-  
-  return commands;
+function trimInfoTag(command) {
+  return command.name !== '-I';
 }
 
 function removeEveryOtherFrame(n, commands, data) {
-  commands.push('-d2');
+  commands.push({name: '-d2'});
   
   let frameCount = data.toString('utf8').split('image #').length - 1;
   if (frameCount <= 4) return commands;
-  commands.push('--delete');
+  commands.push({name: '--delete'});
 
   for (let i = 1; i < frameCount; i += n) {
-    commands.push('#' + i);
+    commands.push({name: '#' + i});
   }
 
   return commands;
@@ -365,5 +391,7 @@ function isBodyValid(body, type) {
 }
 
 // listen for requests :)
-app.listen(8080);
-console.log("Server started.");
+app.listen(process.env.PORT);
+setInterval(() => {
+  http.get(`http://${process.env.PROJECT_DOMAIN}.glitch.me/`);
+}, 280000);

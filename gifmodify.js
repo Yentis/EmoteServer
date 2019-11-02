@@ -22,18 +22,6 @@ function getGifFromBuffer(data) {
   });
 }
 
-exports.reverseGIF = function(data) {
-  return new Promise((resolve, reject) => {
-    getGifFromBuffer(data).then(inputGif => {
-      let frames = inputGif.frames.reverse();
-      let codec = new GifCodec();
-      codec.encodeGif(frames).then(resultGif => {
-        resolve(resultGif.buffer);
-      }).catch(error => reject(error));
-    }).catch(error => reject(error));
-  });
-};
-
 exports.rotateGIF = function(data, degrees) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(data).then(inputGif => {
@@ -51,6 +39,7 @@ function staticRotateGIF(degrees, inputGif, callback) {
   let doneCount = 0;
 
   inputGif.frames.forEach(frame => {
+    setFrameProperties(frame);
     const jShared = new Jimp(1, 1, 0);
     jShared.bitmap = frame.bitmap;
     jShared.rotate(degrees, false, () => {
@@ -84,6 +73,7 @@ function addRotateFramesGIF(inputGif, options, callback) {
   for (let i = 0; i < (frames.length / interval); i++) {
     for (let j = 0; j < interval; j++) {
       let frame = frames[curFrame];
+      setFrameProperties(frame);
       frame.delayCentisecs = Math.max(2, options.value);
       const jShared = new Jimp(1, 1, 0);
       jShared.bitmap = frame.bitmap;
@@ -118,6 +108,7 @@ function addShakingFramesGIF(inputGif, options, callback) {
   for (let i = 0; i < (frames.length / interval); i++) {
     for (let j = 0; j < interval; j++) {
       let frame = frames[curFrame];
+      setFrameProperties(frame);
       frame.delayCentisecs = Math.max(2, options.value);
       let tempFrame = new GifFrame(frame);
       tempFrame.fillRGBA(0x00);
@@ -140,6 +131,10 @@ function addShakingFramesGIF(inputGif, options, callback) {
     }
   }
   callback(frames);
+}
+
+function setFrameProperties(frame, options) {
+  frame.interlaced = false;
 }
 
 exports.createRotatingPNG = function(options) {
