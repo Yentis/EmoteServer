@@ -22,11 +22,6 @@ const logger = winston.createLogger({
   ]
 });
 
-// we've started you off with Express, 
-// but feel free to use whatever libs or frameworks you'd like through `package.json`.
-
-// http://expressjs.com/en/starter/static-files.html
-// Add headers
 app.use(function(req, res, next) {
   res.setHeader('Access-Control-Allow-Origin', 'https://discordapp.com');
   res.setHeader('Access-Control-Allow-Methods', 'POST');
@@ -40,7 +35,7 @@ app.get('/test', (req, res) => {
   res.render('test');
 });
 
-// http://expressjs.com/en/starter/basic-routing.html
+
 app.get("/", (request, response) => {
   response.sendStatus(200);
 });
