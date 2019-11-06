@@ -148,21 +148,21 @@ exports.createColorShiftingGIF = function(options) {
 
 function addColorShiftingFramesGIF(inputGif, options, callback) {
   let frames = inputGif.frames;
-  while (frames.length < 16)  // increase gif length to not skip too many colors
+  while (frames.length < 16) {  // increase gif length to not skip too many colors
     frames = frames.concat(GifUtil.cloneFrames(frames));
+  }
   let interval = Math.floor(frames.length / 32) + 1; // go over "each" color every up to 32 frames
   for (let i = 0; i < frames.length; i++) {
     let frame = frames[i];
-    setFrameProperties(frame, options); // necessary?
+    setFrameProperties(frame, options);
     for (let j = 0; j < frame.bitmap.data.length; j += 4) { // go over each pixel
       if (frame.bitmap.data[j + 3] > 0) {  // only recolor if non-transparent
         let colors = rgb2hsl(frame.bitmap.data[j], frame.bitmap.data[j + 1], frame.bitmap.data[j + 2]);
         colors[0] += (interval * i / frames.length);  // shift hue to change color
-        while (colors[0] > 1)
-          colors[0]--;
+        while (colors[0] > 1) colors[0]--;
         colors = hsl2rgb(colors[0], colors[1], colors[2]);
-        for (let l = 0; l < 3; l++) {
-          frame.bitmap.data[j + l] = colors[l];
+        for (let k = 0; k < 3; k++) {
+          frame.bitmap.data[j + k] = colors[k];
         }
       }
     }
@@ -336,8 +336,7 @@ function addColorShiftingFramesPNG(options) {
       if (imgData.data[j + 3] > 0) {  // only recolor if non-transparent
         let colors = rgb2hsl(imgData.data[j], imgData.data[j + 1], imgData.data[j + 2]);
         colors[0] += interval;  // shift hue to change color
-        if (colors[0] > 1)
-          colors[0]--;
+        if (colors[0] > 1) colors[0]--;
         colors = hsl2rgb(colors[0], colors[1], colors[2]);
         for (let k = 0; k < 3; k++) {
           imgData.data[j + k] = colors[k];
@@ -354,7 +353,7 @@ function rgb2hsl(r, g, b) {
   r /= 255; g /= 255; b /= 255;
   let max = Math.max(r, g, b), min = Math.min(r, g, b);
   let h, s, l = (max + min) / 2;
-  if (max == min) {
+  if (max === min) {
     h = s = 0;
   } else {
     let d = max - min;
@@ -381,7 +380,7 @@ function hue2rgb(p, q, t) {
 // h, s, l in [0, 1] ~ r, g, b in [0, 255]
 function hsl2rgb(h, s, l) {
     let r, g, b, q, p;
-    if (s == 0) {
+    if (s === 0) {
         r = g = b = l;
     } else {
         q = l < 0.5 ? l * (1 + s) : l + s - l * s;

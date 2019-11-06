@@ -206,7 +206,7 @@ function getCommands(options) {
       case 'spin':
       case 'spinrev':
       case 'shake':
-      case "hypno":
+      case "rainbow":
         let speed = 8;
 
         if (option[1]) {
@@ -330,7 +330,7 @@ function processSpecialCommand(command) {
       case 'rotate':
         gifmodify.rotateGIF(command.buffer, command.value).then(buffer => resolve(buffer)).catch(err => reject(err));
         break;
-      case 'hypno':
+      case 'rainbow':
         type = command.type === 'gif' ? 'createColorShiftingGIF' : 'createColorShiftingPNG';
         gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
         break;
