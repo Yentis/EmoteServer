@@ -133,6 +133,43 @@ function addShakingFramesGIF(inputGif, options, callback) {
   callback(frames);
 }
 
+exports.createColorShiftingGIF = function(options) {
+  return new Promise((resolve, reject) => {
+    getGifFromBuffer(options.buffer).then(inputGif => {
+      addColorShiftingFramesGIF(inputGif, options, frames => {
+        let codec = new GifCodec();
+        codec.encodeGif(frames).then(resultGif => {
+          resolve(resultGif.buffer);
+        });
+      });
+    }).catch(error => reject(error));
+  });
+};
+
+function addColorShiftingFramesGIF(inputGif, options, callback) {
+  let frames = inputGif.frames;
+  while (frames.length < 16)  // increase gif length to not skip too many colors
+    frames = frames.concat(GifUtil.cloneFrames(frames));
+  let interval = Math.floor(frames.length / 32) + 1; // go over "each" color every up to 32 frames
+  for (let i = 0; i < frames.length; i++) {
+    let frame = frames[i];
+    setFrameProperties(frame, options); // necessary?
+    for (let j = 0; j < frame.bitmap.data.length; j += 4) { // go over each pixel
+      if (frame.bitmap.data[j + 3] > 0) {  // only recolor if non-transparent
+        let colors = rgb2hsl(frame.bitmap.data[j], frame.bitmap.data[j + 1], frame.bitmap.data[j + 2]);
+        colors[0] += (interval * i / frames.length);  // shift hue to change color
+        while (colors[0] > 1)
+          colors[0]--;
+        colors = hsl2rgb(colors[0], colors[1], colors[2]);
+        for (let l = 0; l < 3; l++) {
+          frame.bitmap.data[j + l] = colors[l];
+        }
+      }
+    }
+  }
+  callback(frames);
+}
+
 function setFrameProperties(frame, options) {
   frame.interlaced = false;
 }
@@ -254,6 +291,106 @@ function addShakingFramesPNG(options) {
     ctx.drawImage(options.image, -options.width, -options.height, options.width, options.height);
     options.encoder.addFrame(ctx);
   }
+}
+
+exports.createColorShiftingPNG = function(options) {
+  return new Promise((resolve, reject) => {
+    loadImage(options.buffer).then(image => {
+      let size = options.isResized ? 1 : options.size;
+      let width = size * image.width;
+      let height = size * image.height;
+      let encoder = new GIFEncoder(width, height);
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+
+      encoder.start();
+      encoder.setRepeat(0);
+      encoder.setQuality(5);
+      encoder.setDelay(options.value * 5);
+      encoder.setTransparent(0x00000000);
+
+      let canvas = createCanvas(width, height);
+      let ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0, width, height);
+      encoder.addFrame(ctx);
+
+      addColorShiftingFramesPNG({
+        canvas: canvas,
+        image: image,
+        width: width,
+        height: height,
+        encoder: encoder
+      });
+
+      encoder.finish();
+    }).catch(error => reject(error));
+  });
+};
+
+function addColorShiftingFramesPNG(options) {
+  let ctx = options.canvas.getContext('2d');
+  let amountFrames = 32;  // arbitrary
+  let interval = 1 / amountFrames; // hue shift per step
+  for (let i = 0; i < amountFrames; i++) {
+    let imgData = ctx.getImageData(0, 0, options.width, options.height);
+    for (let j = 0; j < imgData.data.length; j += 4) {
+      if (imgData.data[j + 3] > 0) {  // only recolor if non-transparent
+        let colors = rgb2hsl(imgData.data[j], imgData.data[j + 1], imgData.data[j + 2]);
+        colors[0] += interval;  // shift hue to change color
+        if (colors[0] > 1)
+          colors[0]--;
+        colors = hsl2rgb(colors[0], colors[1], colors[2]);
+        for (let k = 0; k < 3; k++) {
+          imgData.data[j + k] = colors[k];
+        }
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+    options.encoder.addFrame(ctx);
+  }
+}
+
+// r, g, b in [0, 255] ~ h, s, l in [0, 1]
+function rgb2hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  let max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+  if (max == min) {
+    h = s = 0;
+  } else {
+    let d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return [ h, s, l ];
+}
+
+function hue2rgb(p, q, t) {
+    if (t < 0) t++;
+    else if (t > 1) t--;
+    if (t < 1/6) return p + (q - p) * 6 * t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+    return p;
+}
+
+// h, s, l in [0, 1] ~ r, g, b in [0, 255]
+function hsl2rgb(h, s, l) {
+    let r, g, b, q, p;
+    if (s == 0) {
+        r = g = b = l;
+    } else {
+        q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+    }
+    return [ r * 255, g * 255, b * 255 ];
 }
 
 function clearContext(canvas) {

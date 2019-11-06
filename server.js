@@ -206,6 +206,7 @@ function getCommands(options) {
       case 'spin':
       case 'spinrev':
       case 'shake':
+      case "hypno":
         let speed = 8;
 
         if (option[1]) {
@@ -329,6 +330,10 @@ function processSpecialCommand(command) {
       case 'rotate':
         gifmodify.rotateGIF(command.buffer, command.value).then(buffer => resolve(buffer)).catch(err => reject(err));
         break;
+      case 'hypno':
+        type = command.type === 'gif' ? 'createColorShiftingGIF' : 'createColorShiftingPNG';
+        gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
+        break;
       default:
         resolve(command.buffer);
         break;
@@ -373,10 +378,6 @@ function removeEveryOtherFrame(n, commands, data) {
   return commands;
 }
 
-
-
-
-
 function isBodyValid(body, type) {
   if(type === 'modify') {
     return !!(body && body.url && body.options && Array.isArray(body.options));
@@ -387,6 +388,8 @@ function isBodyValid(body, type) {
 
 // listen for requests :)
 app.listen(process.env.PORT);
+//app.listen(8080);
 setInterval(() => {
   http.get(`http://${process.env.PROJECT_DOMAIN}.glitch.me/`);
+  //http.get(`localhost:8080/`);
 }, 280000);
