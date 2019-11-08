@@ -154,7 +154,7 @@ function addColorShiftingFramesGIF(inputGif, options, callback) {
   let interval = Math.floor(frames.length / 32) + 1; // go over "each" color every up to 32 frames
   for (let i = 0; i < frames.length; i++) {
     let frame = frames[i];
-    setFrameProperties(frame, options);
+    setFrameProperties(frame);
     for (let j = 0; j < frame.bitmap.data.length; j += 4) { // go over each pixel
       if (frame.bitmap.data[j + 3] > 0) {  // only recolor if non-transparent
         let colors = rgb2hsl(frame.bitmap.data[j], frame.bitmap.data[j + 1], frame.bitmap.data[j + 2]);
@@ -170,7 +170,24 @@ function addColorShiftingFramesGIF(inputGif, options, callback) {
   callback(frames);
 }
 
-function setFrameProperties(frame, options) {
+exports.createWigglingGIF = function(options) {
+  return new Promise((resolve, reject) => {
+    getGifFromBuffer(options.buffer).then(inputGif => {
+      addWigglingFramesGIF(inputGif, options, frames => {
+        let codec = new GifCodec();
+        codec.encodeGif(frames).then(resultGif => {
+          resolve(resultGif.buffer);
+        });
+      });
+    }).catch(error => reject(error));
+  });
+}
+
+function addWigglingFramesGIF(inputGif, options, callback) {
+  // TODO
+}
+
+function setFrameProperties(frame) {
   frame.interlaced = false;
 }
 
@@ -344,6 +361,118 @@ function addColorShiftingFramesPNG(options) {
       }
     }
     ctx.putImageData(imgData, 0, 0);
+    options.encoder.addFrame(ctx);
+  }
+}
+
+exports.createWigglingPNG = function(options) {
+  return new Promise((resolve, reject) => {
+    loadImage(options.buffer).then(image => {
+      let size = options.isResized ? 1 : options.size;
+
+      let width = Math.floor(size * image.width);
+      width += 2 * Math.floor(width / 15); // ~6.6% of width is wiggle room for both sides
+
+      let height = Math.floor(size * image.height);
+      let encoder = new GIFEncoder(width, height);
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+
+      encoder.start();
+      encoder.setRepeat(0);
+      encoder.setQuality(5);
+      encoder.setDelay(options.value * 3);
+      encoder.setTransparent(0x00000000);
+
+      addWigglingFramesPNG({
+        size: size,
+        image: image,
+        width: width,
+        height: height,
+        encoder: encoder,
+      });
+
+      encoder.finish();
+    }).catch(error => reject(error));
+  });
+};
+
+function addWigglingFramesPNG(options) {
+  let width = options.width;
+  let imgWidth = Math.floor(options.image.width * options.size);
+  let margin = width - imgWidth;
+  let canvas = createCanvas(width, options.height);
+
+  // --- hardest part begins here ---
+  let stepSize = Math.max(1, Math.floor(margin / 6));
+  let frames = 2 * (margin / stepSize + 4);
+  let stripeHeight = 2 * stepSize;
+  // ---- hardest part ends here ----
+
+  /*
+  console.log("imgWidth:", imgWidth);
+  console.log("width:", width);
+  console.log("height:", options.height);
+  console.log("margin:", margin);
+  console.log("stepSize:", stepSize);
+  console.log("stripeHeight:", stripeHeight);
+  console.log("frames:", frames);
+  //*/
+
+  let startStep = margin / 2; // Initial offset of wiggle
+  let startLeft = true; // true -> go to left
+
+  for (let frame = 0; frame < frames; frame++) {
+
+    let step = startStep;
+    let left = startLeft;
+
+    // Clear context, then draw image on the far right of the canvas
+    let ctx = clearContext(canvas);
+    ctx.drawImage(options.image, margin, 0, imgWidth, options.size * options.image.height);
+
+    for (let stripe = 0; stripe < options.height; stripe += stripeHeight) {
+      // Pixel lines whitin the same stripe are shifted by the same amount
+      for (let line = 0; line < stripeHeight; line++) {
+        let imgData = ctx.getImageData(0, stripe + line, width, 1);
+        // Shift pixel line to the left
+        if (step > 0) {
+          for (let j = 0; j < imgData.data.length - 4 * step; j++) {
+            imgData.data[j] = imgData.data[j + 4 * step];
+          }
+          // Make pixels to the right of the image transparent
+          for (let j = 4 * (width - step) + 3; j < 4 * width; j += 4) {
+            imgData.data[j] = 0;
+          }
+          ctx.putImageData(imgData, 0, stripe + line);
+        // Shift pixel line to the right
+        } else if (step < 0) {
+          for (let j = imgData.data.length - 2; j >= -4 * step; j--) {
+            imgData.data[j] = imgData.data[j + 4 * step];
+          }
+          // Make pixels to the left of the image transparent
+          for (let j = 3; j < 4 * (margin - step); j++) {
+            imgData[j] = 0;
+          }
+          ctx.putImageData(imgData, 0, stripe + line);
+        }
+      }
+      // Set wiggle offset for next stripe
+      if (left) {
+        step += stepSize;
+        if (step > margin + stepSize) left = false;
+      } else {
+        step -= stepSize;
+        if (step < -stepSize) left = true;
+      }
+    }
+    // Set initial wiggle offset for next frame
+    if (startLeft) {
+      startStep += stepSize;
+      if (startStep > margin + stepSize) startLeft = false;
+    } else {
+      startStep -= stepSize;
+      if (startStep < -stepSize) startLeft = true;
+    }
     options.encoder.addFrame(ctx);
   }
 }
