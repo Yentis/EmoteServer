@@ -206,7 +206,8 @@ function getCommands(options) {
       case 'spin':
       case 'spinrev':
       case 'shake':
-      case "rainbow":
+      case 'rainbow':
+      case 'infinite':
         let speed = 8;
 
         if (option[1]) {
@@ -334,6 +335,10 @@ function processSpecialCommand(command) {
         type = command.type === 'gif' ? 'createColorShiftingGIF' : 'createColorShiftingPNG';
         gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
         break;
+      case 'infinite':
+        type = command.type === 'gif' ? 'createInfiniteGIF' : 'createInfinitePNG';
+        gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
+        break;
       default:
         resolve(command.buffer);
         break;
@@ -391,5 +396,5 @@ app.listen(process.env.PORT);
 //app.listen(8080);
 setInterval(() => {
   http.get(`http://${process.env.PROJECT_DOMAIN}.glitch.me/`);
-  //http.get(`localhost:8080/`);
+  //http.get(`http://localhost:8080/`);
 }, 280000);

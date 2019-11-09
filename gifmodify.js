@@ -163,6 +163,70 @@ function addColorShiftingFramesGIF(inputGif, options, callback) {
   callback(frames);
 }
 
+exports.createInfiniteGIF = function(options) {
+  return new Promise((resolve, reject) => {
+    getGifFromBuffer(options.buffer).then(inputGif => {
+      addInfiniteFramesGIF(inputGif, options, frames => {
+        let codec = new GifCodec();
+        codec.encodeGif(frames).then(resultGif => {
+          resolve(resultGif.buffer);
+        });
+      });
+    }).catch(error => reject(error));
+  });
+}
+
+function addInfiniteFramesGIF(inputGif, options, callback) {
+
+  let scalesAmount = 5;
+  let scaleDiff = 0.9;  // Difference between each scale
+  let scaleStep = 0.03; // Scale shift between frames
+  let scales;
+
+  function resetScales() {
+    scales = [];
+    for (let depth = 0; depth < scalesAmount; depth++) {
+      scales.push((scalesAmount - depth - 1) * scaleDiff + scaleStep);
+    }
+  }
+
+  resetScales();
+  let frames = alignGif(inputGif.frames, scaleDiff / scaleStep);
+  let width = frames[0].bitmap.width;
+  let height = frames[0].bitmap.height;
+
+  for (let i = 0; i < frames.length; i++) {
+    // Start off blank
+    let newFrame = new Jimp(width, height, 0x00);
+    // Add appropriate frame with each depth scale
+    for (let depth = 0; depth < scalesAmount; depth++) {
+      let scaledFrame = new Jimp(frames[i].bitmap);
+      scaledFrame.scale(scales[depth]);
+      let margin = (scaledFrame.bitmap.width - width) / 2;
+      let imgData, offset;
+      // Blit frame properly with respect to the scale
+      if (scales[depth] > 1) {
+        newFrame.blit(scaledFrame, 0, 0, margin, margin, width, height);
+      } else {
+        newFrame.blit(scaledFrame, -margin, -margin);
+      }
+    }
+    frames[i].interlaced = false;
+    frames[i].bitmap = newFrame.bitmap;
+    // Jimp's blitting adds too much color info, requantize
+    GifUtil.quantizeDekker(frames[i], 256);
+    // Shift scales for next frame
+    if (scales[0] >= scalesAmount * scaleDiff) {
+      resetScales();
+    } else {
+      for (let depth = 0; depth < scalesAmount; depth++) {
+        scales[depth] += scaleStep;
+      }
+    }
+  }
+  callback(frames);
+}
+
 function setFrameProperties(frame) {
   frame.interlaced = false;
 }
@@ -306,7 +370,7 @@ exports.createInfinitePNG = function(options) {
       let {width, height, encoder} = preparePNGVariables(options, image);
 
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
-      setEncoderProperties(encoder, options.value * 6);
+      setEncoderProperties(encoder, options.value * 10);
       prepareContext(image, width, height);
 
       addInfiniteFramesPNG({
@@ -323,15 +387,13 @@ exports.createInfinitePNG = function(options) {
 
 function addInfiniteFramesPNG(options) {
   let scalesAmount = 4; // 3 usually enough but 4 won't hurt
-  let scaleDiff = 0.90; // Difference between each scale
-  let scaleStep = 0.1;  // Scale shift between frames
-  let scales;
+  let scaleDiff = 0.9;  // Difference between each scale
+  let scaleStep = 0.06;  // Scale shift between frames
+  let frames = scaleDiff / scaleStep;
+  let scales = [];
 
-  function resetScales() {
-    scales = [];
-    for (let depth = 0; depth < scalesAmount; depth++) {
-      scales.push((scalesAmount - depth - 1) * scaleDiff + scaleStep);
-    }
+  for (let depth = 0; depth < scalesAmount; depth++) {
+    scales.push((scalesAmount - depth - 1) * scaleDiff + scaleStep);
   }
 
   function putImageDataWithoutTransparency(ctx, imageData, dx, dy) {
@@ -339,7 +401,7 @@ function addInfiniteFramesPNG(options) {
     for (let y = 0; y < imageData.height; y++) {
       for (let x = 0; x < imageData.width; x++) {
         let pos = y * imageData.width + x;
-        if (data[pos * 4 + 3] > 200) { // Draw if sufficiently opaque
+        if (data[pos * 4 + 3] > 200) { // Draw pixel if sufficiently opaque
           ctx.fillStyle = 'rgba(' + data[pos * 4 + 0]
                             + ',' + data[pos * 4 + 1]
                             + ',' + data[pos * 4 + 2]
@@ -349,9 +411,6 @@ function addInfiniteFramesPNG(options) {
       }
     }
   }
-
-  resetScales();
-  let frames = scaleDiff / scaleStep;
 
   for (let frame = 0; frame < frames; frame++) {
     // Frame's context starts off blank
@@ -378,12 +437,8 @@ function addInfiniteFramesPNG(options) {
     }
     options.encoder.addFrame(context);
     // Shift scales for next frame
-    if (scales[0] === scalesAmount * scaleDiff) {
-      resetScales;
-    } else {
-      for (let depth = 0; depth < scalesAmount; depth++) {
-        scales[depth] += scaleStep;
-      }
+    for (let depth = 0; depth < scalesAmount; depth++) {
+      scales[depth] += scaleStep;
     }
   }
 }
@@ -532,20 +587,18 @@ function getBuffer(data) {
 }
 
 function alignGif(frames, interval) {
-  while (frames.length < interval) {
-    let startLength = frames.length;
-    for (let i = 0; i < startLength; i++) {
-      let frame = new GifFrame(frames[i]);
-      frames.push(frame);
-    }
+  console.log("before:", frames.length);
+  let alignedFrames = frames;
+  while (alignedFrames.length < interval) {
+    alignedFrames = alignedFrames.concat(GifUtil.cloneFrames(frames));
   }
 
-  let framesToDelete = frames.length % interval;
+  let framesToDelete = alignedFrames.length % interval;
 
   for (let i = 0; i < framesToDelete; i++) {
-    let frameToDelete = Math.floor(Math.random() * frames.length - 1) + 1;
-    frames.splice(frameToDelete, 1);
+    let frameToDelete = Math.floor(Math.random() * alignedFrames.length - 1) + 1;
+    alignedFrames.splice(frameToDelete, 1);
   }
 
-  return frames;
+  return alignedFrames;
 }
