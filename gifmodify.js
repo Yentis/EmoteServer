@@ -153,20 +153,13 @@ function addColorShiftingFramesGIF(inputGif, options, callback) {
     frames = frames.concat(GifUtil.cloneFrames(frames));
   }
   let interval = Math.floor(frames.length / 32) + 1; // go over "each" color every up to 32 frames
+  let randomBlack = Math.random();
+  let randomWhite = Math.random();
+
   for (let i = 0; i < frames.length; i++) {
     let frame = frames[i];
     setFrameProperties(frame, { interlaced: false });
-    for (let j = 0; j < frame.bitmap.data.length; j += 4) { // go over each pixel
-      if (frame.bitmap.data[j + 3] > 0) {  // only recolor if non-transparent
-        let colors = rgb2hsl(frame.bitmap.data[j], frame.bitmap.data[j + 1], frame.bitmap.data[j + 2]);
-        colors[0] += (interval * i / frames.length);  // shift hue to change color
-        while (colors[0] > 1) colors[0]--;
-        colors = hsl2rgb(colors[0], colors[1], colors[2]);
-        for (let k = 0; k < 3; k++) {
-          frame.bitmap.data[j + k] = colors[k];
-        }
-      }
-    }
+    shiftColors(frame.bitmap, interval * i / frames.length, randomBlack, randomWhite);
   }
   callback(frames);
 }
@@ -240,18 +233,12 @@ function setFrameProperties(frame, options) {
 exports.createRotatingPNG = function(options) {
   return new Promise((resolve, reject) => {
     loadImage(options.buffer).then(image => {
-      let size = options.isResized ? 1 : options.size;
-      let width = size * image.width;
-      let height = size * image.height;
+      let {width, height} = preparePNGVariables(options, image);
       let max = Math.max(width, height);
       let encoder = new GIFEncoder(max, max);
-      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
 
-      encoder.start();
-      encoder.setRepeat(0);
-      encoder.setQuality(5);
-      encoder.setDelay(options.value * 10);
-      encoder.setTransparent(0x00000000);
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      setEncoderProperties(encoder, options.value * 10)
       
       let canvas = createCanvas(max, max);
       let ctx = canvas.getContext('2d');
@@ -301,23 +288,13 @@ function addRotateFramePNG(options, i) {
 exports.createShakingPNG = function(options) {
   return new Promise((resolve, reject) => {
     loadImage(options.buffer).then(image => {
-      let size = options.isResized ? 1 : options.size;
-      let width = size * image.width;
-      let height = size * image.height;
-      let encoder = new GIFEncoder(width, height);
-      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      let {width, height, encoder} = preparePNGVariables(options, image);
 
-      encoder.start();
-      encoder.setRepeat(0);
-      encoder.setQuality(5);
-      encoder.setDelay(options.value * 10);
-      encoder.setTransparent(0x00000000);
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      setEncoderProperties(encoder, options.value * 10);
+      prepareContext(image, width, height);
 
       let canvas = createCanvas(width, height);
-      let ctx = canvas.getContext('2d');
-      ctx.drawImage(image, 0, 0, width, height);
-      encoder.addFrame(ctx);
-
       addShakingFramesPNG({
         canvas: canvas,
         image: image,
@@ -359,56 +336,61 @@ function addShakingFramesPNG(options) {
 exports.createColorShiftingPNG = function(options) {
   return new Promise((resolve, reject) => {
     loadImage(options.buffer).then(image => {
-      let size = options.isResized ? 1 : options.size;
-      let width = size * image.width;
-      let height = size * image.height;
-      let encoder = new GIFEncoder(width, height);
+      let {width, height, encoder} = preparePNGVariables(options, image);
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      setEncoderProperties(encoder, options.value * 5);
+      let ctx = prepareContext(image, width, height);
 
-      encoder.start();
-      encoder.setRepeat(0);
-      encoder.setQuality(5);
-      encoder.setDelay(options.value * 5);
-      encoder.setTransparent(0x00000000);
+      let amountFrames = 32;  // arbitrary
+      let interval = 1 / amountFrames; // hue shift per step
+      let randomBlack = Math.random();
+      let randomWhite = Math.random();
+      for (let i = 0; i < amountFrames; i++) {
+        let imgData = ctx.getImageData(0, 0, width, height);
+        shiftColors(
+          imgData,
+          interval,
+          randomBlack,
+          randomWhite
+          );
 
-      let canvas = createCanvas(width, height);
-      let ctx = canvas.getContext('2d');
-      ctx.drawImage(image, 0, 0, width, height);
-      encoder.addFrame(ctx);
-
-      addColorShiftingFramesPNG({
-        canvas: canvas,
-        image: image,
-        width: width,
-        height: height,
-        encoder: encoder
-      });
+        ctx.putImageData(imgData, 0, 0);
+        encoder.addFrame(ctx);
+      }
 
       encoder.finish();
     }).catch(error => reject(error));
   });
 };
 
-function addColorShiftingFramesPNG(options) {
-  let ctx = options.canvas.getContext('2d');
-  let amountFrames = 32;  // arbitrary
-  let interval = 1 / amountFrames; // hue shift per step
-  for (let i = 0; i < amountFrames; i++) {
-    let imgData = ctx.getImageData(0, 0, options.width, options.height);
-    for (let j = 0; j < imgData.data.length; j += 4) {
-      if (imgData.data[j + 3] > 0) {  // only recolor if non-transparent
-        let colors = rgb2hsl(imgData.data[j], imgData.data[j + 1], imgData.data[j + 2]);
-        colors[0] += interval;  // shift hue to change color
-        if (colors[0] > 1) colors[0]--;
-        colors = hsl2rgb(colors[0], colors[1], colors[2]);
-        for (let k = 0; k < 3; k++) {
-          imgData.data[j + k] = colors[k];
-        }
-      }
+function shiftColors(imgData, interval, randomBlack, randomWhite) {
+  for (let i = 0; i < imgData.data.length; i += 4) {
+    if (imgData.data[i + 3] > 0) {  // only recolor if non-transparent
+      let colors = shiftColor(imgData.data, i, interval, randomBlack, randomWhite);
+
+      while (colors[0] > 1) colors[0]--;
+      colors = hsl2rgb(colors[0], colors[1], colors[2]);
+      imgData.data.set(colors, i);
     }
-    ctx.putImageData(imgData, 0, 0);
-    options.encoder.addFrame(ctx);
   }
+}
+
+function shiftColor(imgData, index, shiftAmount, randomBlack, randomWhite) {
+  let initialColors = [imgData[index], imgData[index + 1], imgData[index + 2]];
+  let whiteThreshold = 30;
+  let blackThreshold = 220;
+
+  let colors;
+  if (initialColors[0] <= whiteThreshold && initialColors[1] <= whiteThreshold && initialColors[2] <= whiteThreshold) {
+    colors = [randomWhite, 0.5, 0.2];
+  } else if (initialColors[0] >= blackThreshold && initialColors[1] >= blackThreshold && initialColors[2] >= blackThreshold) {
+    colors = [randomBlack, 0.5, 0.8];
+  } else {
+    colors = rgb2hsl(initialColors[0], initialColors[1], initialColors[2]);
+  }
+
+  colors[0] += shiftAmount;
+  return colors;
 }
 
 exports.createWigglingPNG = function(options) {
@@ -552,6 +534,34 @@ function hsl2rgb(h, s, l) {
         b = hue2rgb(p, q, h - 1/3);
     }
     return [ r * 255, g * 255, b * 255 ];
+}
+
+function preparePNGVariables(options, image) {
+  const size = options.isResized ? 1 : options.size;
+  const width = size * image.width;
+  const height = size * image.height;
+
+  return {
+    width,
+    height,
+    encoder: new GIFEncoder(width, height)
+  };
+}
+
+function setEncoderProperties(encoder, delay) {
+  encoder.start();
+  encoder.setRepeat(0);
+  encoder.setQuality(5);
+  encoder.setDelay(delay);
+  encoder.setTransparent(0x00000000);
+}
+
+function prepareContext(image, width, height) {
+  let canvas = createCanvas(width, height);
+  let ctx = canvas.getContext('2d');
+  ctx.drawImage(image, 0, 0, width, height);
+  
+  return ctx;
 }
 
 function clearContext(canvas) {
