@@ -8,7 +8,8 @@ const Jimp = require('jimp');
 const {
   GifUtil,
   GifCodec,
-  GifFrame
+  GifFrame,
+  BitmapImage,
 } = require('gifwrap');
 const toStream = require('buffer-to-stream');
 
@@ -163,8 +164,44 @@ function addColorShiftingFramesGIF(inputGif, options, callback) {
   callback(frames);
 }
 
-function setFrameProperties(frame) {
+exports.createWigglingGIF = function(options) {
+  return new Promise((resolve, reject) => {
+    getGifFromBuffer(options.buffer).then(inputGif => {
+      addWigglingFramesGIF(inputGif, options, frames => {
+        let codec = new GifCodec();
+        codec.encodeGif(frames).then(resultGif => {
+          resolve(resultGif.buffer);
+        });
+      });
+    }).catch(error => reject(error));
+  });
+}
+
+function addWigglingFramesGIF(inputGif, options, callback) {
+  let imgWidth = inputGif.frames[0].bitmap.width;
+  options.width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width is wiggle room for both sides
+  options.height = inputGif.frames[0].bitmap.height;
+  options.margin = options.width - imgWidth;
+
+  let {shiftSize, interval, stripeHeight, shift, left} = prepareWiggleVariables(options.margin);
+  let frames = alignGif(inputGif.frames, interval);
+
+  for (let i = 0; i < frames.length; i++) {
+    let frameData = getWigglingFrameData(new Jimp(frames[i].bitmap), shift, left, stripeHeight, shiftSize, options);
+    setFrameProperties(frames[i], { bitmap: frameData });
+    // Set initial wiggle offset for next frame
+    [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
+  }
+  callback(frames);
+}
+
+function setFrameProperties(frame, options) {
   frame.interlaced = false;
+  if (options !== undefined) {
+    for (let [key, value] of Object.entries(options)) {
+      frame[key] = value;
+    }
+  }
 }
 
 exports.createRotatingPNG = function(options) {
@@ -307,10 +344,7 @@ function shiftColors(imgData, interval, randomBlack, randomWhite) {
 
       while (colors[0] > 1) colors[0]--;
       colors = hsl2rgb(colors[0], colors[1], colors[2]);
-
-      for (let k = 0; k < 3; k++) {
-        imgData.data[i + k] = colors[k];
-      }
+      imgData.data.set(colors, i);
     }
   }
 }
@@ -331,6 +365,54 @@ function shiftColor(imgData, index, shiftAmount, randomBlack, randomWhite) {
 
   colors[0] += shiftAmount;
   return colors;
+}
+
+exports.createWigglingPNG = function(options) {
+  return new Promise((resolve, reject) => {
+    Jimp.read(options.buffer).then(image => {
+      let { width: imgWidth, height} = preparePNGVariables(options, image.bitmap);
+      if (!options.isResized) {
+        image.scale(options.size);
+      }
+      options.height = height;
+      options.width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width is wiggle room for both sides
+      options.margin = options.width - imgWidth;
+      let encoder = new GIFEncoder(options.width, height);
+      let {shiftSize, interval, stripeHeight, shift, left} = prepareWiggleVariables(options.margin);
+
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      setEncoderProperties(encoder, options.value * 5);
+
+      for (let i = 0; i < interval; i++) {
+        // Wiggle frame
+        let frameData = getWigglingFrameData(image, shift, left, stripeHeight, shiftSize, options);
+        encoder.addFrame(frameData.data);
+        // Set initial wiggle offset for next frame
+        [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
+      }
+      encoder.finish();
+    }).catch(error => reject(error));
+  });
+};
+
+function prepareWiggleVariables(margin) {
+  let shiftSize = Math.max(1, Math.floor(margin / 6));
+  let interval = 2 * (margin / shiftSize + 4);
+  let stripeHeight = 2 * shiftSize;
+  let shift = margin / 2; // Initial offset of wiggle
+  let left = true;        // true -> go to left
+  return { shiftSize, interval, stripeHeight, shift, left };
+}
+
+function getWigglingFrameData(oldFrame, shift, left, stripeHeight, shiftSize, options) {
+  let newFrame = new Jimp(options.width, options.height, 0x00);
+  for (let stripe = 0; stripe < options.height; stripe += stripeHeight) {
+    for (let line = 0; line < stripeHeight; line++) {
+      newFrame.blit(oldFrame, shift, stripe + line, 0, stripe + line, oldFrame.bitmap.width, 1);
+    }
+    [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
+  }
+  return newFrame.bitmap;
 }
 
 // r, g, b in [0, 255] ~ h, s, l in [0, 1]
@@ -375,6 +457,17 @@ function hsl2rgb(h, s, l) {
         b = hue2rgb(p, q, h - 1/3);
     }
     return [ r * 255, g * 255, b * 255 ];
+}
+
+function shiftStep(shift, left, margin, shiftSize) {
+  if (left) {
+    shift -= shiftSize;
+    if (shift < -shiftSize) left = false;
+  } else {
+    shift += shiftSize;
+    if (shift > margin + shiftSize) left = true;
+  }
+  return [shift, left];
 }
 
 function preparePNGVariables(options, image) {
