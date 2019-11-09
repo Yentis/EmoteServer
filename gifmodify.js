@@ -397,24 +397,18 @@ exports.createWigglingPNG = function(options) {
   return new Promise((resolve, reject) => {
     loadImage(options.buffer).then(image => {
       let size = options.isResized ? 1 : options.size;
-
+      let height = Math.floor(size * image.height);
       let width = Math.floor(size * image.width);
       width += 2 * Math.floor(width / 15); // ~6.6% of width is wiggle room for both sides
 
-      let height = Math.floor(size * image.height);
       let encoder = new GIFEncoder(width, height);
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
-
-      encoder.start();
-      encoder.setRepeat(0);
-      encoder.setQuality(5);
-      encoder.setDelay(options.value * 3);
-      encoder.setTransparent(0x00000000);
+      setEncoderProperties(encoder, options.value * 3);
 
       addWigglingFramesPNG({
-        size: size,
         image: image,
         width: width,
+        imgWidth: Math.floor(size * image.width),
         height: height,
         encoder: encoder,
       });
@@ -425,10 +419,8 @@ exports.createWigglingPNG = function(options) {
 };
 
 function addWigglingFramesPNG(options) {
-  let width = options.width;
-  let imgWidth = Math.floor(options.image.width * options.size);
-  let margin = width - imgWidth;
-  let canvas = createCanvas(width, options.height);
+  let margin = options.width - options.imgWidth;
+  let canvas = createCanvas(options.width, options.height);
 
   let shiftSize = Math.max(1, Math.floor(margin / 6));
   let frames = 2 * (margin / shiftSize + 4);
@@ -455,19 +447,19 @@ function addWigglingFramesPNG(options) {
 
     // Clear context, then draw image on the far right of the canvas
     let ctx = clearContext(canvas);
-    ctx.drawImage(options.image, margin, 0, imgWidth, options.size * options.image.height);
+    ctx.drawImage(options.image, margin, 0, options.imgWidth, options.height);
 
     for (let stripe = 0; stripe < options.height; stripe += stripeHeight) {
       // Pixel lines whithin the same stripe are shifted by the same amount
       for (let line = 0; line < stripeHeight; line++) {
-        let imgData = ctx.getImageData(0, stripe + line, width, 1);
+        let imgData = ctx.getImageData(0, stripe + line, options.width, 1);
         // Shift pixel line to the left
         if (shift > 0) {
           for (let j = 0; j < imgData.data.length - 4 * shift; j++) {
             imgData.data[j] = imgData.data[j + 4 * shift];
           }
           // Make pixels to the right of the image transparent
-          for (let j = 4 * (width - shift) + 3; j < 4 * width; j += 4) {
+          for (let j = 4 * (options.width - shift) + 3; j < 4 * options.width; j += 4) {
             imgData.data[j] = 0;
           }
           ctx.putImageData(imgData, 0, stripe + line);

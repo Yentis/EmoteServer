@@ -396,5 +396,5 @@ app.listen(process.env.PORT);
 //app.listen(8080);
 setInterval(() => {
   http.get(`http://${process.env.PROJECT_DOMAIN}.glitch.me/`);
-  //http.get(`localhost:8080/`);
+  //http.get(`http://localhost:8080/`);
 }, 280000);
