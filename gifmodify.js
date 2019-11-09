@@ -339,7 +339,7 @@ exports.createColorShiftingPNG = function(options) {
     loadImage(options.buffer).then(image => {
       let {width, height, encoder} = preparePNGVariables(options, image);
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
-      setEncoderProperties(encoder, options.value * 5);
+      setEncoderProperties(encoder, options.value * 10);
       let ctx = prepareContext(image, width, height);
 
       let amountFrames = 32;  // arbitrary

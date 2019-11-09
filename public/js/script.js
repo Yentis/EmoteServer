@@ -46,11 +46,15 @@ function uploadFiles(files) {
         .all(filesPromises)
         .then(function(files) {
             if(files.length === 1) {
+                let uploadRequest = {
+                    username,
+                    file: files[0]
+                }
                 $.ajax({
                     url: "/commit",
                     method: "POST",
                     contentType: 'application/json',
-                    data: JSON.stringify(files[0])
+                    data: JSON.stringify(uploadRequest)
                 })
                 .done((data) => {
                     let message = $("#message");
