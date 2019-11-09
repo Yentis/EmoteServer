@@ -289,7 +289,7 @@ exports.createColorShiftingPNG = function(options) {
           interval,
           randomBlack,
           randomWhite
-          );
+        );
 
         ctx.putImageData(imgData, 0, 0);
         encoder.addFrame(ctx);
@@ -299,6 +299,94 @@ exports.createColorShiftingPNG = function(options) {
     }).catch(error => reject(error));
   });
 };
+
+exports.createInfinitePNG = function(options) {
+  return new Promise((resolve, reject) => {
+    loadImage(options.buffer).then(image => {
+      let {width, height, encoder} = preparePNGVariables(options, image);
+
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      setEncoderProperties(encoder, options.value * 6);
+      prepareContext(image, width, height);
+
+      addInfiniteFramesPNG({
+        image: image,
+        width: width,
+        height: height,
+        encoder: encoder
+      });
+
+      encoder.finish();
+    }).catch(error => reject(error));
+  });
+};
+
+function addInfiniteFramesPNG(options) {
+  let scalesAmount = 4; // 3 usually enough but 4 won't hurt
+  let scaleDiff = 0.90; // Difference between each scale
+  let scaleStep = 0.1;  // Scale shift between frames
+  let scales;
+
+  function resetScales() {
+    scales = [];
+    for (let depth = 0; depth < scalesAmount; depth++) {
+      scales.push((scalesAmount - depth - 1) * scaleDiff + scaleStep);
+    }
+  }
+
+  function putImageDataWithoutTransparency(ctx, imageData, dx, dy) {
+    let data = imageData.data;
+    for (let y = 0; y < imageData.height; y++) {
+      for (let x = 0; x < imageData.width; x++) {
+        let pos = y * imageData.width + x;
+        if (data[pos * 4 + 3] > 200) { // Draw if sufficiently opaque
+          ctx.fillStyle = 'rgba(' + data[pos * 4 + 0]
+                            + ',' + data[pos * 4 + 1]
+                            + ',' + data[pos * 4 + 2]
+                            + ',' + (data[pos * 4 + 3]) + ')';
+          ctx.fillRect(x + dx, y + dy, 1, 1);
+        }
+      }
+    }
+  }
+
+  resetScales();
+  let frames = scaleDiff / scaleStep;
+
+  for (let frame = 0; frame < frames; frame++) {
+    // Frame's context starts off blank
+    let canvas = createCanvas(options.width, options.height);
+    let context = canvas.getContext('2d');
+    // For each scale, add something to the context
+    for (let depth = 0; depth < scalesAmount; depth++) {
+      // Draw the scaled image
+      let scaledCanvas = createCanvas(canvas.width * scales[depth], canvas.height * scales[depth]);
+      let scaledContext = scaledCanvas.getContext('2d');
+      scaledContext.drawImage(options.image, 0, 0, canvas.width * scales[depth], canvas.height * scales[depth]);
+
+      let margin = (scaledCanvas.width - canvas.width) / 2;
+      let imgData, offset;
+      if (scales[depth] > 1) {
+        imgData = scaledContext.getImageData(margin, margin, canvas.width, canvas.height);
+        offset = 0;
+      } else {
+        imgData = scaledContext.getImageData(0, 0, scaledCanvas.width, scaledCanvas.height);
+        offset = -margin;
+      }
+      // Put (part of) the scaled image onto the final context
+      putImageDataWithoutTransparency(context, imgData, offset, offset);
+    }
+    options.encoder.addFrame(context);
+    // Shift scales for next frame
+    if (scales[0] === scalesAmount * scaleDiff) {
+      resetScales;
+    } else {
+      for (let depth = 0; depth < scalesAmount; depth++) {
+        scales[depth] += scaleStep;
+      }
+    }
+  }
+}
 
 function shiftColors(imgData, interval, randomBlack, randomWhite) {
   for (let i = 0; i < imgData.data.length; i += 4) {
@@ -332,6 +420,8 @@ function shiftColor(imgData, index, shiftAmount, randomBlack, randomWhite) {
   colors[0] += shiftAmount;
   return colors;
 }
+
+
 
 // r, g, b in [0, 255] ~ h, s, l in [0, 1]
 function rgb2hsl(r, g, b) {
