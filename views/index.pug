@@ -1,9 +1,15 @@
 html
     head
         title Upload a new emote
+        script.
+            let username = '#{username}';
+            if (!username || username === 'undefined#undefined') {
+                window.location.href = '/newemote/login';
+            }
         link(rel='stylesheet' href='css/style.css')
     body
         h1 Upload a new emote
+        h2= 'Logged in as ' + username
 
         form(action='/' method='POST')
             label(for='file') Select your emote (png or gif):
@@ -33,4 +39,5 @@ html
                 img(src="https://yentis.github.io/emotes/images/90.png")
                 p BlobHyperSweat
     script(src='js/jquery-3.3.1.min.js')
-    script(src='js/script.js')
+    script(src='js/script.js').
+        let username = '#{username}';

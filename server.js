@@ -29,19 +29,15 @@ app.use(function(req, res, next) {
   next();
 });
 app.use(express.static('public'));
+app.use('/newemote', require('./discord.js'));
 app.set('view engine', 'pug');
 
 app.get('/test', (req, res) => {
   res.render('test');
 });
 
-
 app.get("/", (request, response) => {
   response.sendStatus(200);
-});
-
-app.get('/newemote', function(req, res) {
-  res.render('index');
 });
 
 
@@ -50,7 +46,7 @@ app.get('/newemote', function(req, res) {
 
 const fileInfo = {
   emoteBasePath: 'emotes/images/',
-  emoteDescription: 'Add an emote.',
+  emoteDescription: ' added an emote.',
   jsonPath: 'emotes/emotes.json',
   jsonDescription: 'Update JSON',
   jsonEncode: true
@@ -71,7 +67,7 @@ app.post('/commit', jsonParser, function(req, res) {
       res.end(file.err.toString());
     } else {
       logger.log('info', 'Processed emote data');
-      commitEmote(file)
+      commitEmote(file, req.body.username)
         .then(() => {
         logger.log('info', 'Emote added');
         res.end('ok');
@@ -86,13 +82,13 @@ app.post('/commit', jsonParser, function(req, res) {
   });
 });
 
-function commitEmote(file) {
+function commitEmote(file, username) {
   return new Promise((resolve, reject) => {
     let filesToWrite = [];
     filesToWrite.push({
       filename: file.filename,
       content: file.content,
-      description: fileInfo.emoteDescription
+      description: username + fileInfo.emoteDescription
     });
     filesToWrite.push({
       filename: fileInfo.jsonPath,
@@ -105,22 +101,23 @@ function commitEmote(file) {
 }
 
 function processData(data, emotes) {
-  if (checkNameExists(data.emoteName, emotes)) {
+  let file = data.file;
+  if (checkNameExists(file.emoteName, emotes)) {
     return {err: "Emote name already exists!"};
   }
 
   let emoteNumber = Object.keys(emotes).length + 1;
 
-  emotes[emoteNumber] = data.emoteName + data.extension;
+  emotes[emoteNumber] = file.emoteName + file.extension;
   let newJson = JSON.stringify(emotes);
   if (newJson === undefined) {
     return {err: "A problem occurred while adding your emote, please check your file."};
   }
 
   return {
-    filename: fileInfo.emoteBasePath + emoteNumber + data.extension,
-    content: base64.encode(data.content),
-    width: data.width,
+    filename: fileInfo.emoteBasePath + emoteNumber + file.extension,
+    content: base64.encode(file.content),
+    width: file.width,
     jsonContent: newJson,
   };
 }
@@ -382,7 +379,7 @@ function isBodyValid(body, type) {
   if(type === 'modify') {
     return !!(body && body.url && body.options && Array.isArray(body.options));
   } else if(type === 'newemote') {
-    return !!(body && body.emoteName && body.extension && body.content && body.width);
+    return !!(body && body.username && body.file.emoteName && body.file.extension && body.file.content && body.file.width);
   }
 }
 
