@@ -567,7 +567,7 @@ function getSizeFromOptions(options) {
   if (!options.isResized) {
     let size = options.size;
     
-    if (scale.indexOf('x') === -1) {
+    if (size.indexOf('x') === -1) {
       widthModifier = size;
       heightModifier = size;
     } else {
