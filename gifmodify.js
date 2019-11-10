@@ -567,13 +567,13 @@ function getSizeFromOptions(options) {
   if (!options.isResized) {
     let size = options.size;
     
-    if (size.indexOf('x') === -1) {
-      widthModifier = size;
-      heightModifier = size;
-    } else {
+    if ((typeof size) === 'string' && size.indexOf('x') !== -1) {
       size = size.split('x');
       widthModifier = size[0];
       heightModifier = size[1];
+    } else {
+      widthModifier = size;
+      heightModifier = size;
     }
   }
 
