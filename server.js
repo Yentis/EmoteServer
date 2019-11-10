@@ -216,6 +216,7 @@ function getCommands(options) {
       case 'shake':
       case 'rainbow':
       case 'wiggle':
+      case 'infinite':
         let speed = 8;
 
         if (option[1]) {
@@ -345,6 +346,10 @@ function processSpecialCommand(command) {
         break;
       case 'wiggle':
         type = command.type === 'gif' ? 'createWigglingGIF' : 'createWigglingPNG';
+        gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
+        break;
+      case 'infinite':
+        type = command.type === 'gif' ? 'createInfiniteGIF' : 'createInfinitePNG';
         gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
         break;
       case 'slide':
