@@ -636,7 +636,7 @@ function preparePNGVariables(options, image) {
   const {widthModifier, heightModifier} = getSizeFromOptions(options);
   // Flooring to elude rounding errors
   const width = Math.floor(widthModifier * image.width);
-  const height = Math.floor(heightModifier * image.height;
+  const height = Math.floor(heightModifier * image.height);
 
   return {
     width,
