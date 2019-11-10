@@ -151,13 +151,13 @@ app.post('/modifygif', jsonParser, (req, res) => {
   
   processCommands(data)
     .then(buffer => {
-    logger.log('info', 'Processed modified emote', {length: buffer.length});
-    res.status(200);
-    res.send(buffer.toString('base64'));
+      logger.log('info', 'Processed modified emote', {length: buffer.length});
+      res.status(200);
+      res.send(buffer.toString('base64'));
     }).catch(err => {
-    logger.log('warn', 'Failed to modify emote ', err);
-    res.status(400);
-    res.send(err);
+      logger.log('warn', 'Failed to modify emote ', err);
+      res.status(400);
+      res.send(err);
     });
 });
 
@@ -198,6 +198,17 @@ function getCommands(options) {
       case 'rotate':
         command.name = option[0];
         command.param = option[1];
+        special.push(command);
+        break;
+      case 'slide':
+        let direction = -1; // left
+
+        if (option[1] && option[1] === 'right') {
+          direction = 1;
+        }
+
+        command.name = option[0];
+        command.param = direction;
         special.push(command);
         break;
       case 'spin':
@@ -339,6 +350,10 @@ function processSpecialCommand(command) {
         break;
       case 'infinite':
         type = command.type === 'gif' ? 'createInfiniteGIF' : 'createInfinitePNG';
+        gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
+        break;
+      case 'slide':
+        type = command.type === 'gif' ? 'createSlidingGIF' : 'createSlidingPNG';
         gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
         break;
       default:

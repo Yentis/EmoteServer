@@ -170,7 +170,7 @@ exports.createWigglingGIF = function(options) {
       });
     }).catch(error => reject(error));
   });
-}
+};
 
 function addWigglingFramesGIF(inputGif, options, callback) {
   let imgWidth = inputGif.frames[0].bitmap.width;
@@ -212,7 +212,7 @@ exports.createInfiniteGIF = function(options) {
       });
     }).catch(error => reject(error));
   });
-}
+};
 
 function resetInfiniteScales(scalesAmount, scaleDiff, scaleStep) {
   let scales = [];
@@ -232,6 +232,26 @@ function shiftInfiniteScales(scales, scaleDiff, scaleStep) {
   }
   return scales;
 }
+
+exports.createSlidingGIF = function(options) {
+  return new Promise((resolve, reject) => {
+    getGifFromBuffer(options.buffer).then(inputGif => {
+      let width = inputGif.width;
+      let { interval, direction, shift, shiftSize } = prepareSlidingVariables(options, width);
+      let frames = alignGif(inputGif.frames, interval);
+      
+      for (let i = 0; i < frames.length; i++) {
+        let frameData = getShiftedFrameData(new Jimp(frames[i].bitmap), shift);
+        setFrameProperties(frames[i], { bitmap: frameData });
+        shift = (shift + direction * shiftSize) % width;
+      }
+      let codec = new GifCodec();
+      codec.encodeGif(frames).then(resultGif => {
+        resolve(resultGif.buffer);
+      });
+    }).catch(error => reject(error));
+  });
+};
 
 function setFrameProperties(frame, options) {
   frame.interlaced = false;
@@ -500,6 +520,43 @@ function getInfiniteShiftedFrameData(frameBitmap, scales, width, height) {
   return newFrame.bitmap;
 }
 
+exports.createSlidingPNG = function(options) {
+  return new Promise((resolve, reject) => {
+    Jimp.read(options.buffer).then(image => {
+      let { width, height, encoder } = preparePNGVariables(options, image.bitmap);
+      let { interval, direction, shift, shiftSize } = prepareSlidingVariables(options, width);
+      image.resize(width, height);
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      setEncoderProperties(encoder, 80);
+      for (let i = 0; i < interval; i++) {
+        let frameData = getShiftedFrameData(image, Math.floor(shift));
+        encoder.addFrame(frameData.data);
+        shift = (shift + direction * shiftSize) % width;
+      }
+      encoder.finish();
+    }).catch(error => reject(error));
+  });
+};
+
+function prepareSlidingVariables(options, width) {
+  let interval = 16;
+  return {
+    interval,
+    direction: options.value,
+    shift: 0,
+    shiftSize: width / interval,
+  }
+}
+
+function getShiftedFrameData(oldFrame, shift) {
+  let width = oldFrame.bitmap.width;
+  let height = oldFrame.bitmap.height;
+  let newFrame = new Jimp(width, height, 0x00);
+  newFrame.blit(oldFrame, shift, 0, 0, 0, width - shift, height);
+  newFrame.blit(oldFrame, 0, 0, width - shift, 0, shift, height);
+  return newFrame.bitmap;
+}
+
 // r, g, b in [0, 255] ~ h, s, l in [0, 1]
 function rgb2hsl(r, g, b) {
   r /= 255; g /= 255; b /= 255;
@@ -577,8 +634,9 @@ function getSizeFromOptions(options) {
 
 function preparePNGVariables(options, image) {
   const {widthModifier, heightModifier} = getSizeFromOptions(options);
-  const width = widthModifier * image.width;
-  const height = heightModifier * image.height;
+  // Flooring to elude rounding errors
+  const width = Math.floor(widthModifier * image.width);
+  const height = Math.floor(heightModifier * image.height;
 
   return {
     width,
