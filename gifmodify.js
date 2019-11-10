@@ -74,8 +74,7 @@ function addRotateFramesGIF(inputGif, options, callback) {
   for (let i = 0; i < (frames.length / interval); i++) {
     for (let j = 0; j < interval; j++) {
       let frame = frames[curFrame];
-      setFrameProperties(frame);
-      frame.delayCentisecs = Math.max(2, options.value);
+      setFrameProperties(frame, { delayCentisecs: Math.max(2, options.value) });
       const jShared = new Jimp(1, 1, 0);
       jShared.bitmap = frame.bitmap;
       jShared.rotate(options.degrees * j, false, () => {
@@ -109,8 +108,7 @@ function addShakingFramesGIF(inputGif, options, callback) {
   for (let i = 0; i < (frames.length / interval); i++) {
     for (let j = 0; j < interval; j++) {
       let frame = frames[curFrame];
-      setFrameProperties(frame);
-      frame.delayCentisecs = Math.max(2, options.value);
+      setFrameProperties(frame, { delayCentisecs: Math.max(2, options.value) });
       let tempFrame = new GifFrame(frame);
       tempFrame.fillRGBA(0x00);
       switch (j) {
@@ -148,18 +146,15 @@ exports.createColorShiftingGIF = function(options) {
 };
 
 function addColorShiftingFramesGIF(inputGif, options, callback) {
-  let frames = inputGif.frames;
-  while (frames.length < 16) {  // increase gif length to not skip too many colors
-    frames = frames.concat(GifUtil.cloneFrames(frames));
-  }
-  let interval = Math.floor(frames.length / 32) + 1; // go over "each" color every up to 32 frames
+  let interval = 32; // go over "each" color every 32 frames
+  let frames = alignGif(inputGif.frames, interval);
   let randomBlack = Math.random();
   let randomWhite = Math.random();
 
   for (let i = 0; i < frames.length; i++) {
     let frame = frames[i];
     setFrameProperties(frame);
-    shiftColors(frame.bitmap, interval * i / frames.length, randomBlack, randomWhite);
+    shiftColors(frame.bitmap, (i % interval) / interval, randomBlack, randomWhite);
   }
   callback(frames);
 }
@@ -626,13 +621,13 @@ function getSizeFromOptions(options) {
   if (!options.isResized) {
     let size = options.size;
     
-    if (size.indexOf('x') === -1) {
-      widthModifier = size;
-      heightModifier = size;
-    } else {
+    if ((typeof size) === 'string' && size.indexOf('x') !== -1) {
       size = size.split('x');
       widthModifier = size[0];
       heightModifier = size[1];
+    } else {
+      widthModifier = size;
+      heightModifier = size;
     }
   }
 
@@ -708,12 +703,16 @@ function alignGif(frames, interval) {
   while (alignedFrames.length < interval) {
     alignedFrames = alignedFrames.concat(GifUtil.cloneFrames(frames));
   }
+  let amountCopies = alignedFrames.length / frames.length;
 
   let framesToDelete = alignedFrames.length % interval;
+  let currentCopy = 0;
 
   for (let i = 0; i < framesToDelete; i++) {
-    let frameToDelete = Math.floor(Math.random() * alignedFrames.length - 1) + 1;
-    alignedFrames.splice(frameToDelete, 1);
+    let frameToDelete = Math.floor(Math.random() * frames.length - 1) + 1;
+    alignedFrames.splice(frameToDelete + currentCopy * frames.length, 1);
+    // Keep shifting copy so each copy loses about the same amount of frames
+    currentCopy = (currentCopy + 1) % amountCopies;
   }
 
   return alignedFrames;
