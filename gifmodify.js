@@ -525,9 +525,6 @@ exports.createSlidingPNG = function(options) {
     Jimp.read(options.buffer).then(image => {
       let { width, height, encoder } = preparePNGVariables(options, image.bitmap);
       let { interval, direction, shift, shiftSize } = prepareSlidingVariables(options, width);
-      // Flooring to elude weird shift bug
-      width = Math.floor(width);
-      height = Math.floor(height);
       image.resize(width, height);
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
       setEncoderProperties(encoder, 80);
@@ -637,8 +634,9 @@ function getSizeFromOptions(options) {
 
 function preparePNGVariables(options, image) {
   const {widthModifier, heightModifier} = getSizeFromOptions(options);
-  const width = widthModifier * image.width;
-  const height = heightModifier * image.height;
+  // Flooring to elude rounding errors
+  const width = Math.floor(widthModifier * image.width);
+  const height = Math.floor(heightModifier * image.height;
 
   return {
     width,
