@@ -8,7 +8,8 @@ const Jimp = require('jimp');
 const {
   GifUtil,
   GifCodec,
-  GifFrame
+  GifFrame,
+  BitmapImage,
 } = require('gifwrap');
 const toStream = require('buffer-to-stream');
 
@@ -163,10 +164,10 @@ function addColorShiftingFramesGIF(inputGif, options, callback) {
   callback(frames);
 }
 
-exports.createInfiniteGIF = function(options) {
+exports.createWigglingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
-      addInfiniteFramesGIF(inputGif, options, frames => {
+      addWigglingFramesGIF(inputGif, options, frames => {
         let codec = new GifCodec();
         codec.encodeGif(frames).then(resultGif => {
           resolve(resultGif.buffer);
@@ -176,59 +177,74 @@ exports.createInfiniteGIF = function(options) {
   });
 }
 
-function addInfiniteFramesGIF(inputGif, options, callback) {
+function addWigglingFramesGIF(inputGif, options, callback) {
+  let imgWidth = inputGif.frames[0].bitmap.width;
+  options.width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width is wiggle room for both sides
+  options.height = inputGif.frames[0].bitmap.height;
+  options.margin = options.width - imgWidth;
 
-  let scalesAmount = 5;
-  let scaleDiff = 0.9;  // Difference between each scale
-  let scaleStep = 0.03; // Scale shift between frames
-  let scales;
-
-  function resetScales() {
-    scales = [];
-    for (let depth = 0; depth < scalesAmount; depth++) {
-      scales.push((scalesAmount - depth - 1) * scaleDiff + scaleStep);
-    }
-  }
-
-  resetScales();
-  let frames = alignGif(inputGif.frames, scaleDiff / scaleStep);
-  let width = frames[0].bitmap.width;
-  let height = frames[0].bitmap.height;
+  let {shiftSize, interval, stripeHeight, shift, left} = prepareWiggleVariables(options.margin);
+  let frames = alignGif(inputGif.frames, interval);
 
   for (let i = 0; i < frames.length; i++) {
-    // Start off blank
-    let newFrame = new Jimp(width, height, 0x00);
-    // Add appropriate frame with each depth scale
-    for (let depth = 0; depth < scalesAmount; depth++) {
-      let scaledFrame = new Jimp(frames[i].bitmap);
-      scaledFrame.scale(scales[depth]);
-      let margin = (scaledFrame.bitmap.width - width) / 2;
-      let imgData, offset;
-      // Blit frame properly with respect to the scale
-      if (scales[depth] > 1) {
-        newFrame.blit(scaledFrame, 0, 0, margin, margin, width, height);
-      } else {
-        newFrame.blit(scaledFrame, -margin, -margin);
-      }
-    }
-    frames[i].interlaced = false;
-    frames[i].bitmap = newFrame.bitmap;
-    // Jimp's blitting adds too much color info, requantize
-    GifUtil.quantizeDekker(frames[i], 256);
-    // Shift scales for next frame
-    if (scales[0] >= scalesAmount * scaleDiff) {
-      resetScales();
-    } else {
-      for (let depth = 0; depth < scalesAmount; depth++) {
-        scales[depth] += scaleStep;
-      }
-    }
+    let frameData = getWiggledFrameData(new Jimp(frames[i].bitmap), shift, left, stripeHeight, shiftSize, options);
+    setFrameProperties(frames[i], { bitmap: frameData });
+    // Set initial wiggle offset for next frame
+    [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
   }
   callback(frames);
 }
 
-function setFrameProperties(frame) {
+exports.createInfiniteGIF = function(options) {
+  return new Promise((resolve, reject) => {
+    getGifFromBuffer(options.buffer).then(inputGif => {
+
+      let scalesAmount = 5;
+      let scaleDiff = 0.9;   // Difference between each scale
+      let scaleStep = 0.03;  // Scale shift between frames
+      let scales = resetInfiniteScales(scalesAmount, scaleDiff, scaleStep);
+      let frames = alignGif(inputGif.frames, scaleDiff / scaleStep);
+
+      for (let i = 0; i < frames.length; i++) {
+        let frameData = getInfiniteShiftedFrameData(frames[i].bitmap, scales, frames[i].bitmap.width, frames[i].bitmap.height);
+        setFrameProperties(frames[i], { bitmap: frameData });
+        // Shift scales for next frame
+        scales = shiftInfiniteScales(scales, scaleDiff, scaleStep);
+      }
+      let codec = new GifCodec();
+      codec.encodeGif(frames).then(resultGif => {
+        resolve(resultGif.buffer);
+      });
+    }).catch(error => reject(error));
+  });
+}
+
+function resetInfiniteScales(scalesAmount, scaleDiff, scaleStep) {
+  let scales = [];
+  for (let depth = 0; depth < scalesAmount; depth++) {
+    scales.push((scalesAmount - depth - 1) * scaleDiff + scaleStep);
+  }
+  return scales;
+}
+
+function shiftInfiniteScales(scales, scaleDiff, scaleStep) {
+  if (scales[0] >= scales.length * scaleDiff) {
+    scales = resetInfiniteScales(scales.length, scaleDiff, scaleStep);
+  } else {
+    for (let depth = 0; depth < scales.length; depth++) {
+      scales[depth] += scaleStep;
+    }
+  }
+  return scales;
+}
+
+function setFrameProperties(frame, options) {
   frame.interlaced = false;
+  if (options !== undefined) {
+    for (let [key, value] of Object.entries(options)) {
+      frame[key] = value;
+    }
+  }
 }
 
 exports.createRotatingPNG = function(options) {
@@ -364,85 +380,6 @@ exports.createColorShiftingPNG = function(options) {
   });
 };
 
-exports.createInfinitePNG = function(options) {
-  return new Promise((resolve, reject) => {
-    loadImage(options.buffer).then(image => {
-      let {width, height, encoder} = preparePNGVariables(options, image);
-
-      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
-      setEncoderProperties(encoder, options.value * 10);
-      prepareContext(image, width, height);
-
-      addInfiniteFramesPNG({
-        image: image,
-        width: width,
-        height: height,
-        encoder: encoder
-      });
-
-      encoder.finish();
-    }).catch(error => reject(error));
-  });
-};
-
-function addInfiniteFramesPNG(options) {
-  let scalesAmount = 4; // 3 usually enough but 4 won't hurt
-  let scaleDiff = 0.9;  // Difference between each scale
-  let scaleStep = 0.06;  // Scale shift between frames
-  let frames = scaleDiff / scaleStep;
-  let scales = [];
-
-  for (let depth = 0; depth < scalesAmount; depth++) {
-    scales.push((scalesAmount - depth - 1) * scaleDiff + scaleStep);
-  }
-
-  function putImageDataWithoutTransparency(ctx, imageData, dx, dy) {
-    let data = imageData.data;
-    for (let y = 0; y < imageData.height; y++) {
-      for (let x = 0; x < imageData.width; x++) {
-        let pos = y * imageData.width + x;
-        if (data[pos * 4 + 3] > 200) { // Draw pixel if sufficiently opaque
-          ctx.fillStyle = 'rgba(' + data[pos * 4 + 0]
-                            + ',' + data[pos * 4 + 1]
-                            + ',' + data[pos * 4 + 2]
-                            + ',' + (data[pos * 4 + 3]) + ')';
-          ctx.fillRect(x + dx, y + dy, 1, 1);
-        }
-      }
-    }
-  }
-
-  for (let frame = 0; frame < frames; frame++) {
-    // Frame's context starts off blank
-    let canvas = createCanvas(options.width, options.height);
-    let context = canvas.getContext('2d');
-    // For each scale, add something to the context
-    for (let depth = 0; depth < scalesAmount; depth++) {
-      // Draw the scaled image
-      let scaledCanvas = createCanvas(canvas.width * scales[depth], canvas.height * scales[depth]);
-      let scaledContext = scaledCanvas.getContext('2d');
-      scaledContext.drawImage(options.image, 0, 0, canvas.width * scales[depth], canvas.height * scales[depth]);
-
-      let margin = (scaledCanvas.width - canvas.width) / 2;
-      let imgData, offset;
-      if (scales[depth] > 1) {
-        imgData = scaledContext.getImageData(margin, margin, canvas.width, canvas.height);
-        offset = 0;
-      } else {
-        imgData = scaledContext.getImageData(0, 0, scaledCanvas.width, scaledCanvas.height);
-        offset = -margin;
-      }
-      // Put (part of) the scaled image onto the final context
-      putImageDataWithoutTransparency(context, imgData, offset, offset);
-    }
-    options.encoder.addFrame(context);
-    // Shift scales for next frame
-    for (let depth = 0; depth < scalesAmount; depth++) {
-      scales[depth] += scaleStep;
-    }
-  }
-}
-
 function shiftColors(imgData, interval, randomBlack, randomWhite) {
   for (let i = 0; i < imgData.data.length; i += 4) {
     if (imgData.data[i + 3] > 0) {  // only recolor if non-transparent
@@ -450,10 +387,7 @@ function shiftColors(imgData, interval, randomBlack, randomWhite) {
 
       while (colors[0] > 1) colors[0]--;
       colors = hsl2rgb(colors[0], colors[1], colors[2]);
-
-      for (let k = 0; k < 3; k++) {
-        imgData.data[i + k] = colors[k];
-      }
+      imgData.data.set(colors, i);
     }
   }
 }
@@ -476,7 +410,101 @@ function shiftColor(imgData, index, shiftAmount, randomBlack, randomWhite) {
   return colors;
 }
 
+exports.createWigglingPNG = function(options) {
+  return new Promise((resolve, reject) => {
+    Jimp.read(options.buffer).then(image => {
+      let { width: imgWidth, height} = preparePNGVariables(options, image.bitmap);
+      if (!options.isResized) {
+        image.scale(options.size);
+      }
+      options.height = height;
+      options.width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width is wiggle room for both sides
+      options.margin = options.width - imgWidth;
+      let encoder = new GIFEncoder(options.width, height);
+      let {shiftSize, interval, stripeHeight, shift, left} = prepareWiggleVariables(options.margin);
 
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      setEncoderProperties(encoder, options.value * 5);
+
+      for (let i = 0; i < interval; i++) {
+        // Wiggle frame
+        let frameData = getWiggledFrameData(image, shift, left, stripeHeight, shiftSize, options);
+        encoder.addFrame(frameData.data);
+        // Set initial wiggle offset for next frame
+        [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
+      }
+      encoder.finish();
+    }).catch(error => reject(error));
+  });
+};
+
+function prepareWiggleVariables(margin) {
+  let shiftSize = Math.max(1, Math.floor(margin / 6));
+  let interval = 2 * (margin / shiftSize + 4);
+  let stripeHeight = 2 * shiftSize;
+  let shift = margin / 2; // Initial offset of wiggle
+  let left = true;        // true -> go to left
+  return { shiftSize, interval, stripeHeight, shift, left };
+}
+
+function getWiggledFrameData(oldFrame, shift, left, stripeHeight, shiftSize, options) {
+  let newFrame = new Jimp(options.width, options.height, 0x00);
+  for (let stripe = 0; stripe < options.height; stripe += stripeHeight) {
+    for (let line = 0; line < stripeHeight; line++) {
+      newFrame.blit(oldFrame, shift, stripe + line, 0, stripe + line, oldFrame.bitmap.width, 1);
+    }
+    [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
+  }
+  return newFrame.bitmap;
+}
+
+exports.createInfinitePNG = function(options) {
+  return new Promise((resolve, reject) => {
+    Jimp.read(options.buffer).then(image => {
+      let { width, height, encoder} = preparePNGVariables(options, image.bitmap);
+      if (!options.isResized) {
+        image.scale(options.size);
+      }
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      setEncoderProperties(encoder, options.value * 10);
+
+      let scalesAmount = 5;
+      let scaleDiff = 0.9;   // Difference between each scale
+      let scaleStep = 0.06;  // Scale shift between frames
+      let frames = scaleDiff / scaleStep - 1;
+      let scales = resetInfiniteScales(scalesAmount, scaleDiff, scaleStep);
+
+      for (let i = 0; i < frames; i++) {
+        let frameData = getInfiniteShiftedFrameData(image.bitmap, scales, width, height);
+        encoder.addFrame(frameData.data);
+        // Shift scales for next frame
+        scales = shiftInfiniteScales(scales, scaleDiff, scaleStep);
+      }
+      encoder.finish();
+    }).catch(error => reject(error));
+  });
+};
+
+function getInfiniteShiftedFrameData(frameBitmap, scales, width, height) {
+  let newFrame = new Jimp(width, height, 0x00);
+  // Add appropriate frame with each depth scale
+  for (let depth = 0; depth < scales.length; depth++) {
+    let scaledFrame = new Jimp(frameBitmap);
+    scaledFrame.scale(scales[depth]);
+    let dx = (scaledFrame.bitmap.width - width) / 2;
+    let dy = (scaledFrame.bitmap.height - height) / 2;
+    let imgData, offset;
+    // Blit frame properly with respect to the scale
+    if (scales[depth] > 1) {
+      newFrame.blit(scaledFrame, 0, 0, dx, dy, width, height);
+    } else {
+      newFrame.blit(scaledFrame, -dx, -dy);
+    }
+  }
+  // Jimp's blitting adds too much color info, requantize
+  GifUtil.quantizeDekker(newFrame, 256);
+  return newFrame.bitmap;
+}
 
 // r, g, b in [0, 255] ~ h, s, l in [0, 1]
 function rgb2hsl(r, g, b) {
@@ -520,6 +548,17 @@ function hsl2rgb(h, s, l) {
         b = hue2rgb(p, q, h - 1/3);
     }
     return [ r * 255, g * 255, b * 255 ];
+}
+
+function shiftStep(shift, left, margin, shiftSize) {
+  if (left) {
+    shift -= shiftSize;
+    if (shift < -shiftSize) left = false;
+  } else {
+    shift += shiftSize;
+    if (shift > margin + shiftSize) left = true;
+  }
+  return [shift, left];
 }
 
 function preparePNGVariables(options, image) {
@@ -587,8 +626,7 @@ function getBuffer(data) {
 }
 
 function alignGif(frames, interval) {
-  console.log("before:", frames.length);
-  let alignedFrames = frames;
+  let alignedFrames = GifUtil.cloneFrames(frames);
   while (alignedFrames.length < interval) {
     alignedFrames = alignedFrames.concat(GifUtil.cloneFrames(frames));
   }
