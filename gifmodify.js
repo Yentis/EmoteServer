@@ -414,12 +414,12 @@ exports.createWigglingPNG = function(options) {
   return new Promise((resolve, reject) => {
     Jimp.read(options.buffer).then(image => {
       let { width: imgWidth, height} = preparePNGVariables(options, image.bitmap);
-      if (!options.isResized) {
-        image.scale(options.size);
-      }
+      image.resize(imgWidth, height);
+
       options.height = height;
       options.width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width is wiggle room for both sides
       options.margin = options.width - imgWidth;
+
       let encoder = new GIFEncoder(options.width, height);
       let {shiftSize, interval, stripeHeight, shift, left} = prepareWiggleVariables(options.margin);
 
@@ -462,9 +462,8 @@ exports.createInfinitePNG = function(options) {
   return new Promise((resolve, reject) => {
     Jimp.read(options.buffer).then(image => {
       let { width, height, encoder} = preparePNGVariables(options, image.bitmap);
-      if (!options.isResized) {
-        image.scale(options.size);
-      }
+      image.resize(width, height);
+
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
       setEncoderProperties(encoder, options.value * 10);
 
@@ -561,10 +560,30 @@ function shiftStep(shift, left, margin, shiftSize) {
   return [shift, left];
 }
 
+function getSizeFromOptions(options) {
+  let widthModifier = 1;
+  let heightModifier = 1;
+
+  if (!options.isResized) {
+    let size = options.size;
+    
+    if (scale.indexOf('x') === -1) {
+      widthModifier = size;
+      heightModifier = size;
+    } else {
+      size = size.split('x');
+      widthModifier = size[0];
+      heightModifier = size[1];
+    }
+  }
+
+  return {widthModifier, heightModifier};
+}
+
 function preparePNGVariables(options, image) {
-  const size = options.isResized ? 1 : options.size;
-  const width = size * image.width;
-  const height = size * image.height;
+  const {widthModifier, heightModifier} = getSizeFromOptions(options);
+  const width = widthModifier * image.width;
+  const height = heightModifier * image.height;
 
   return {
     width,
