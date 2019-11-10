@@ -187,12 +187,55 @@ function addWigglingFramesGIF(inputGif, options, callback) {
   let frames = alignGif(inputGif.frames, interval);
 
   for (let i = 0; i < frames.length; i++) {
-    let frameData = getWigglingFrameData(new Jimp(frames[i].bitmap), shift, left, stripeHeight, shiftSize, options);
+    let frameData = getWiggledFrameData(new Jimp(frames[i].bitmap), shift, left, stripeHeight, shiftSize, options);
     setFrameProperties(frames[i], { bitmap: frameData });
     // Set initial wiggle offset for next frame
     [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
   }
   callback(frames);
+}
+
+exports.createInfiniteGIF = function(options) {
+  return new Promise((resolve, reject) => {
+    getGifFromBuffer(options.buffer).then(inputGif => {
+
+      let scalesAmount = 5;
+      let scaleDiff = 0.9;   // Difference between each scale
+      let scaleStep = 0.03;  // Scale shift between frames
+      let scales = resetInfiniteScales(scalesAmount, scaleDiff, scaleStep);
+      let frames = alignGif(inputGif.frames, scaleDiff / scaleStep);
+
+      for (let i = 0; i < frames.length; i++) {
+        let frameData = getInfiniteShiftedFrameData(frames[i].bitmap, scales, frames[i].bitmap.width, frames[i].bitmap.height);
+        setFrameProperties(frames[i], { bitmap: frameData });
+        // Shift scales for next frame
+        scales = shiftInfiniteScales(scales, scaleDiff, scaleStep);
+      }
+      let codec = new GifCodec();
+      codec.encodeGif(frames).then(resultGif => {
+        resolve(resultGif.buffer);
+      });
+    }).catch(error => reject(error));
+  });
+}
+
+function resetInfiniteScales(scalesAmount, scaleDiff, scaleStep) {
+  let scales = [];
+  for (let depth = 0; depth < scalesAmount; depth++) {
+    scales.push((scalesAmount - depth - 1) * scaleDiff + scaleStep);
+  }
+  return scales;
+}
+
+function shiftInfiniteScales(scales, scaleDiff, scaleStep) {
+  if (scales[0] >= scales.length * scaleDiff) {
+    scales = resetInfiniteScales(scales.length, scaleDiff, scaleStep);
+  } else {
+    for (let depth = 0; depth < scales.length; depth++) {
+      scales[depth] += scaleStep;
+    }
+  }
+  return scales;
 }
 
 function setFrameProperties(frame, options) {
@@ -326,7 +369,7 @@ exports.createColorShiftingPNG = function(options) {
           interval,
           randomBlack,
           randomWhite
-          );
+        );
 
         ctx.putImageData(imgData, 0, 0);
         encoder.addFrame(ctx);
@@ -385,7 +428,7 @@ exports.createWigglingPNG = function(options) {
 
       for (let i = 0; i < interval; i++) {
         // Wiggle frame
-        let frameData = getWigglingFrameData(image, shift, left, stripeHeight, shiftSize, options);
+        let frameData = getWiggledFrameData(image, shift, left, stripeHeight, shiftSize, options);
         encoder.addFrame(frameData.data);
         // Set initial wiggle offset for next frame
         [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
@@ -404,7 +447,7 @@ function prepareWiggleVariables(margin) {
   return { shiftSize, interval, stripeHeight, shift, left };
 }
 
-function getWigglingFrameData(oldFrame, shift, left, stripeHeight, shiftSize, options) {
+function getWiggledFrameData(oldFrame, shift, left, stripeHeight, shiftSize, options) {
   let newFrame = new Jimp(options.width, options.height, 0x00);
   for (let stripe = 0; stripe < options.height; stripe += stripeHeight) {
     for (let line = 0; line < stripeHeight; line++) {
@@ -412,6 +455,54 @@ function getWigglingFrameData(oldFrame, shift, left, stripeHeight, shiftSize, op
     }
     [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
   }
+  return newFrame.bitmap;
+}
+
+exports.createInfinitePNG = function(options) {
+  return new Promise((resolve, reject) => {
+    Jimp.read(options.buffer).then(image => {
+      let { width, height, encoder} = preparePNGVariables(options, image.bitmap);
+      if (!options.isResized) {
+        image.scale(options.size);
+      }
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      setEncoderProperties(encoder, options.value * 10);
+
+      let scalesAmount = 5;
+      let scaleDiff = 0.9;   // Difference between each scale
+      let scaleStep = 0.06;  // Scale shift between frames
+      let frames = scaleDiff / scaleStep - 1;
+      let scales = resetInfiniteScales(scalesAmount, scaleDiff, scaleStep);
+
+      for (let i = 0; i < frames; i++) {
+        let frameData = getInfiniteShiftedFrameData(image.bitmap, scales, width, height);
+        encoder.addFrame(frameData.data);
+        // Shift scales for next frame
+        scales = shiftInfiniteScales(scales, scaleDiff, scaleStep);
+      }
+      encoder.finish();
+    }).catch(error => reject(error));
+  });
+};
+
+function getInfiniteShiftedFrameData(frameBitmap, scales, width, height) {
+  let newFrame = new Jimp(width, height, 0x00);
+  // Add appropriate frame with each depth scale
+  for (let depth = 0; depth < scales.length; depth++) {
+    let scaledFrame = new Jimp(frameBitmap);
+    scaledFrame.scale(scales[depth]);
+    let dx = (scaledFrame.bitmap.width - width) / 2;
+    let dy = (scaledFrame.bitmap.height - height) / 2;
+    let imgData, offset;
+    // Blit frame properly with respect to the scale
+    if (scales[depth] > 1) {
+      newFrame.blit(scaledFrame, 0, 0, dx, dy, width, height);
+    } else {
+      newFrame.blit(scaledFrame, -dx, -dy);
+    }
+  }
+  // Jimp's blitting adds too much color info, requantize
+  GifUtil.quantizeDekker(newFrame, 256);
   return newFrame.bitmap;
 }
 
@@ -535,20 +626,17 @@ function getBuffer(data) {
 }
 
 function alignGif(frames, interval) {
-  while (frames.length < interval) {
-    let startLength = frames.length;
-    for (let i = 0; i < startLength; i++) {
-      let frame = new GifFrame(frames[i]);
-      frames.push(frame);
-    }
+  let alignedFrames = GifUtil.cloneFrames(frames);
+  while (alignedFrames.length < interval) {
+    alignedFrames = alignedFrames.concat(GifUtil.cloneFrames(frames));
   }
 
-  let framesToDelete = frames.length % interval;
+  let framesToDelete = alignedFrames.length % interval;
 
   for (let i = 0; i < framesToDelete; i++) {
-    let frameToDelete = Math.floor(Math.random() * frames.length - 1) + 1;
-    frames.splice(frameToDelete, 1);
+    let frameToDelete = Math.floor(Math.random() * alignedFrames.length - 1) + 1;
+    alignedFrames.splice(frameToDelete, 1);
   }
 
-  return frames;
+  return alignedFrames;
 }
