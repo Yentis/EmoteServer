@@ -243,7 +243,7 @@ exports.createSlidingGIF = function(options) {
       for (let i = 0; i < frames.length; i++) {
         let frameData = getShiftedFrameData(new Jimp(frames[i].bitmap), shift);
         setFrameProperties(frames[i], { bitmap: frameData });
-        shift += (direction * shiftSize) % width;
+        shift = (shift + direction * shiftSize) % width;
       }
       let codec = new GifCodec();
       codec.encodeGif(frames).then(resultGif => {
@@ -525,15 +525,16 @@ exports.createSlidingPNG = function(options) {
     Jimp.read(options.buffer).then(image => {
       let { width, height, encoder } = preparePNGVariables(options, image.bitmap);
       let { interval, direction, shift, shiftSize } = prepareSlidingVariables(options, width);
-      if (!options.isResized) {
-        image.scale(options.size);
-      }
+      // Flooring to elude weird shift bug
+      width = Math.floor(width);
+      height = Math.floor(height);
+      image.resize(width, height);
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
-      setEncoderProperties(encoder, options.value * 10);
+      setEncoderProperties(encoder, 80);
       for (let i = 0; i < interval; i++) {
-        let frameData = getShiftedFrameData(image, shift);
+        let frameData = getShiftedFrameData(image, Math.floor(shift));
         encoder.addFrame(frameData.data);
-        shift += (direction * shiftSize) % width;
+        shift = (shift + direction * shiftSize) % width;
       }
       encoder.finish();
     }).catch(error => reject(error));
@@ -544,7 +545,7 @@ function prepareSlidingVariables(options, width) {
   let interval = 16;
   return {
     interval,
-    direction: options.value === 0 ? -1 : 1, // 0 = left, 1 = right
+    direction: options.value,
     shift: 0,
     shiftSize: width / interval,
   }
