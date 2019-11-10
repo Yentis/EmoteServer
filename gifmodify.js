@@ -175,7 +175,7 @@ exports.createWigglingGIF = function(options) {
       });
     }).catch(error => reject(error));
   });
-}
+};
 
 function addWigglingFramesGIF(inputGif, options, callback) {
   let imgWidth = inputGif.frames[0].bitmap.width;
@@ -194,6 +194,27 @@ function addWigglingFramesGIF(inputGif, options, callback) {
   }
   callback(frames);
 }
+
+exports.createSlidingGIF = function(options) {
+  return new Promise((resolve, reject) => {
+    getGifFromBuffer(options.buffer).then(inputGif => {
+      let width = inputGif.width;
+      let { interval, direction, shift, shiftSize } = prepareSlidingVariables(options, width);
+      let frames = alignGif(inputGif.frames, interval);
+      
+      for (let i = 0; i < frames.length; i++) {
+        let frameData = getShiftedFrameData(new Jimp(frames[i].bitmap), shift);
+        setFrameProperties(frames[i], { bitmap: frameData });
+        shift += (direction * shiftSize) % width;
+      }
+
+      let codec = new GifCodec();
+      codec.encodeGif(frames).then(resultGif => {
+        resolve(resultGif.buffer);
+      });
+    }).catch(error => reject(error));
+  });
+};
 
 function setFrameProperties(frame, options) {
   frame.interlaced = false;
@@ -412,6 +433,47 @@ function getWigglingFrameData(oldFrame, shift, left, stripeHeight, shiftSize, op
     }
     [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
   }
+  return newFrame.bitmap;
+}
+
+exports.createSlidingPNG = function(options) {
+  return new Promise((resolve, reject) => {
+    Jimp.read(options.buffer).then(image => {
+      let { width, height, encoder } = preparePNGVariables(options, image.bitmap);
+      let { interval, direction, shift, shiftSize } = prepareSlidingVariables(options, width);
+      if (!options.isResized) {
+        image.scale(options.size);
+      }
+
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      setEncoderProperties(encoder, options.value * 10);
+
+      for (let i = 0; i < interval; i++) {
+        let frameData = getShiftedFrameData(image, shift);
+        encoder.addFrame(frameData.data);
+        shift += (direction * shiftSize) % width;
+      }
+      encoder.finish();
+    }).catch(error => reject(error));
+  });
+};
+
+function prepareSlidingVariables(options, width) {
+  let interval = 16;
+  return {
+    interval,
+    direction: options.value === 0 ? -1 : 1, // 0 = left, 1 = right
+    shift: 0,
+    shiftSize: width / interval,
+  }
+}
+
+function getShiftedFrameData(oldFrame, shift) {
+  let width = oldFrame.bitmap.width;
+  let height = oldFrame.bitmap.height;
+  let newFrame = new Jimp(width, height, 0x00);
+  newFrame.blit(oldFrame, shift, 0, 0, 0, width - shift, height);
+  newFrame.blit(oldFrame, 0, 0, width - shift, 0, shift, height);
   return newFrame.bitmap;
 }
 
