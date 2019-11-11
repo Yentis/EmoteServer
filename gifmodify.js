@@ -26,58 +26,46 @@ function getGifFromBuffer(data) {
 exports.rotateGIF = function(data, degrees) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(data).then(inputGif => {
-      staticRotateGIF(-degrees, inputGif, frames => {
-          let codec = new GifCodec();
-          codec.encodeGif(frames).then(resultGif => {
-            resolve(resultGif.buffer);
-          }).catch(error => reject(error));
+
+      let doneCount = 0;
+
+      inputGif.frames.forEach(frame => {
+        setFrameProperties(frame);
+        const jShared = new Jimp(1, 1, 0);
+        jShared.bitmap = frame.bitmap;
+        jShared.rotate(degrees, false, () => {
+          doneCount++;
+          if (doneCount >= inputGif.frames.length) {
+            let codec = new GifCodec();
+            codec.encodeGif(inputGif.frames).then(resultGif => {
+              resolve(resultGif.buffer);
+            }).catch(error => reject(error));
+          }
         });
+      });
     }).catch(error => reject(error));
   });
 };
 
-function staticRotateGIF(degrees, inputGif, callback) {
-  let doneCount = 0;
-
-  inputGif.frames.forEach(frame => {
-    setFrameProperties(frame);
-    const jShared = new Jimp(1, 1, 0);
-    jShared.bitmap = frame.bitmap;
-    jShared.rotate(degrees, false, () => {
-      doneCount++;
-      if (doneCount >= inputGif.frames.length) {
-        callback(inputGif.frames);
-      }
-    });
-  });
-}
-
 exports.createRotatingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
-      const interval = 12;
-      let degrees = options.name === 'spinrev' ? 30 : -30;
+      let centisecsPerRotation = 100; // 1 rotation per second
+      let degrees = 360 * inputGif.frames[0].delayCentisecs  / centisecsPerRotation;
+      let interval = Math.floor(360 / degrees);
       let frames = alignGif(inputGif.frames, interval);
-      let doneCount = 0;
-      let curFrame = 0;
-      for (let i = 0; i < (frames.length / interval); i++) {
-        for (let j = 0; j < interval; j++) {
-          let frame = frames[curFrame];
-          setFrameProperties(frame, { delayCentisecs: Math.max(2, options.value) });
-          const jShared = new Jimp(1, 1, 0);
-          jShared.bitmap = frame.bitmap;
-          jShared.rotate(degrees * j, false, () => {
-            doneCount++;
-            if (doneCount >= frames.length) {
-              let codec = new GifCodec();
-              codec.encodeGif(frames).then(resultGif => {
-                resolve(resultGif.buffer);
-              });
-            }
-          });
-          curFrame++;
-        }
+
+      degrees *= options.name === 'spinrev' ? 1 : -1;
+
+      for (let i = 0; i < frames.length; i++) {
+        let rotatedFrame = new Jimp(frames[i].bitmap);
+        rotatedFrame.rotate((i * degrees) % 360, false);
+        setFrameProperties(frames[i], { bitmap: rotatedFrame.bitmap });
       }
+      let codec = new GifCodec();
+      codec.encodeGif(frames).then(resultGif => {
+        resolve(resultGif.buffer);
+      });
     }).catch(error => reject(error));
   });
 };
@@ -642,13 +630,24 @@ function getBuffer(data) {
 }
 
 function alignGif(frames, interval) {
+  // Duplicate frames until interval is reached
   let alignedFrames = GifUtil.cloneFrames(frames);
   while (alignedFrames.length < interval) {
     alignedFrames = alignedFrames.concat(GifUtil.cloneFrames(frames));
   }
-  let amountCopies = alignedFrames.length / frames.length;
 
   let framesToDelete = alignedFrames.length % interval;
+  /*
+    Removing more than 20% of frames makes it look sucky => add copies until it's below 20%
+    Worst case: interval = (frames.length / 2) + 1 e.g. interval 17 with 32 frames
+    then framesToDelete = 15/32 (46.9%) -> 13/64 (20.3%) -> 11/96 (11.4%)
+  */
+  while (framesToDelete / alignedFrames.length > 0.2) {
+    alignedFrames = alignedFrames.concat(GifUtil.cloneFrames(frames));
+    framesToDelete = alignedFrames.length % interval;
+  }
+
+  let amountCopies = alignedFrames.length / frames.length;
   let currentCopy = 0;
 
   for (let i = 0; i < framesToDelete; i++) {
