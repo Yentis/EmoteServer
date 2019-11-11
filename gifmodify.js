@@ -55,140 +55,126 @@ function staticRotateGIF(degrees, inputGif, callback) {
 exports.createRotatingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
-      options.degrees = options.name === 'spinrev' ? 30 : -30;
-      addRotateFramesGIF(inputGif, options, frames => {
-        let codec = new GifCodec();
-        codec.encodeGif(frames).then(resultGif => {
-          resolve(resultGif.buffer);
-        });
-      });
+      const interval = 12;
+      let degrees = options.name === 'spinrev' ? 30 : -30;
+      let frames = alignGif(inputGif.frames, interval);
+      let doneCount = 0;
+      let curFrame = 0;
+      for (let i = 0; i < (frames.length / interval); i++) {
+        for (let j = 0; j < interval; j++) {
+          let frame = frames[curFrame];
+          setFrameProperties(frame, { delayCentisecs: Math.max(2, options.value) });
+          const jShared = new Jimp(1, 1, 0);
+          jShared.bitmap = frame.bitmap;
+          jShared.rotate(degrees * j, false, () => {
+            doneCount++;
+            if (doneCount >= frames.length) {
+              let codec = new GifCodec();
+              codec.encodeGif(frames).then(resultGif => {
+                resolve(resultGif.buffer);
+              });
+            }
+          });
+          curFrame++;
+        }
+      }
     }).catch(error => reject(error));
   });
 };
-
-function addRotateFramesGIF(inputGif, options, callback) {
-  const interval = 12;
-  let frames = alignGif(inputGif.frames, interval);
-  let doneCount = 0;
-  let curFrame = 0;
-  for (let i = 0; i < (frames.length / interval); i++) {
-    for (let j = 0; j < interval; j++) {
-      let frame = frames[curFrame];
-      setFrameProperties(frame, { delayCentisecs: Math.max(2, options.value) });
-      const jShared = new Jimp(1, 1, 0);
-      jShared.bitmap = frame.bitmap;
-      jShared.rotate(options.degrees * j, false, () => {
-        doneCount++;
-        if (doneCount >= frames.length) {
-          callback(frames);
-        }
-      });
-      curFrame++;
-    }
-  }
-}
 
 exports.createShakingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
-      addShakingFramesGIF(inputGif, options, frames => {
-        let codec = new GifCodec();
-        codec.encodeGif(frames).then(resultGif => {
-          resolve(resultGif.buffer);
-        });
+
+      const interval = 4;
+      let frames = alignGif(inputGif.frames, interval);
+      let curFrame = 0;
+      for (let i = 0; i < (frames.length / interval); i++) {
+        for (let j = 0; j < interval; j++) {
+          let frame = frames[curFrame];
+          setFrameProperties(frame, { delayCentisecs: Math.max(2, options.value) });
+          let tempFrame = new GifFrame(frame);
+          tempFrame.fillRGBA(0x00);
+          switch (j) {
+            case 0:
+              frame.blit(tempFrame, 0, 0, 1, 1, inputGif.width - 1, inputGif.height - 1);
+              break;
+            case 1:
+              frame.blit(tempFrame, 0, 1, 1, 0, inputGif.width - 1, inputGif.height - 1);
+              break;
+            case 2:
+              frame.blit(tempFrame, 1, 1, 0, 0, inputGif.width - 1, inputGif.height - 1);
+              break;
+            case 3:
+              frame.blit(tempFrame, 1, 0, 0, 1, inputGif.width - 1, inputGif.height - 1);
+              break;
+          }
+          frames[curFrame] = new GifFrame(tempFrame);
+          curFrame++;
+        }
+      }
+      let codec = new GifCodec();
+      codec.encodeGif(frames).then(resultGif => {
+        resolve(resultGif.buffer);
       });
     }).catch(error => reject(error));
   });
 };
-
-function addShakingFramesGIF(inputGif, options, callback) {
-  const interval = 4;
-  let frames = alignGif(inputGif.frames, interval);
-  let curFrame = 0;
-  for (let i = 0; i < (frames.length / interval); i++) {
-    for (let j = 0; j < interval; j++) {
-      let frame = frames[curFrame];
-      setFrameProperties(frame, { delayCentisecs: Math.max(2, options.value) });
-      let tempFrame = new GifFrame(frame);
-      tempFrame.fillRGBA(0x00);
-      switch (j) {
-        case 0:
-          frame.blit(tempFrame, 0, 0, 1, 1, inputGif.width - 1, inputGif.height - 1);
-          break;
-        case 1:
-          frame.blit(tempFrame, 0, 1, 1, 0, inputGif.width - 1, inputGif.height - 1);
-          break;
-        case 2:
-          frame.blit(tempFrame, 1, 1, 0, 0, inputGif.width - 1, inputGif.height - 1);
-          break;
-        case 3:
-          frame.blit(tempFrame, 1, 0, 0, 1, inputGif.width - 1, inputGif.height - 1);
-          break;
-      }
-      frames[curFrame] = new GifFrame(tempFrame);
-      curFrame++;
-    }
-  }
-  callback(frames);
-}
 
 exports.createColorShiftingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
-      addColorShiftingFramesGIF(inputGif, options, frames => {
-        let codec = new GifCodec();
-        codec.encodeGif(frames).then(resultGif => {
-          resolve(resultGif.buffer);
-        });
+
+      let interval = 32;
+      let frames = alignGif(inputGif.frames, interval);
+      let randomBlack = Math.random();
+      let randomWhite = Math.random();
+
+      for (let i = 0; i < frames.length; i++) {
+        let frame = frames[i];
+        setFrameProperties(frame);
+        shiftColors(frame.bitmap, (i % interval) / interval, randomBlack, randomWhite);
+      }
+      let codec = new GifCodec();
+      codec.encodeGif(frames).then(resultGif => {
+        resolve(resultGif.buffer);
       });
     }).catch(error => reject(error));
   });
 };
-
-function addColorShiftingFramesGIF(inputGif, options, callback) {
-  let interval = 32; // go over "each" color every 32 frames
-  let frames = alignGif(inputGif.frames, interval);
-  let randomBlack = Math.random();
-  let randomWhite = Math.random();
-
-  for (let i = 0; i < frames.length; i++) {
-    let frame = frames[i];
-    setFrameProperties(frame);
-    shiftColors(frame.bitmap, (i % interval) / interval, randomBlack, randomWhite);
-  }
-  callback(frames);
-}
 
 exports.createWigglingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
-      addWigglingFramesGIF(inputGif, options, frames => {
-        let codec = new GifCodec();
-        codec.encodeGif(frames).then(resultGif => {
-          resolve(resultGif.buffer);
-        });
+
+      let imgWidth = inputGif.frames[0].bitmap.width;
+      options.width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width wiggle room on both sides
+      options.height = inputGif.frames[0].bitmap.height;
+      options.margin = options.width - imgWidth;
+
+      let {shiftSize, interval, stripeHeight, shift, left} = prepareWiggleVariables(options.margin);
+      let frames = alignGif(inputGif.frames, interval);
+
+      for (let i = 0; i < frames.length; i++) {
+        let frameData = getWiggledFrameData(
+          new Jimp(frames[i].bitmap),
+          shift,
+          left,
+          stripeHeight,
+          shiftSize,
+          options
+        );
+        setFrameProperties(frames[i], { bitmap: frameData });
+        // Set initial wiggle offset for next frame
+        [shift, left] = shiftWiggleStep(shift, left, options.margin, shiftSize);
+      }
+      let codec = new GifCodec();
+      codec.encodeGif(frames).then(resultGif => {
+        resolve(resultGif.buffer);
       });
     }).catch(error => reject(error));
   });
 };
-
-function addWigglingFramesGIF(inputGif, options, callback) {
-  let imgWidth = inputGif.frames[0].bitmap.width;
-  options.width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width is wiggle room for both sides
-  options.height = inputGif.frames[0].bitmap.height;
-  options.margin = options.width - imgWidth;
-
-  let {shiftSize, interval, stripeHeight, shift, left} = prepareWiggleVariables(options.margin);
-  let frames = alignGif(inputGif.frames, interval);
-
-  for (let i = 0; i < frames.length; i++) {
-    let frameData = getWiggledFrameData(new Jimp(frames[i].bitmap), shift, left, stripeHeight, shiftSize, options);
-    setFrameProperties(frames[i], { bitmap: frameData });
-    // Set initial wiggle offset for next frame
-    [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
-  }
-  callback(frames);
-}
 
 exports.createInfiniteGIF = function(options) {
   return new Promise((resolve, reject) => {
@@ -201,7 +187,12 @@ exports.createInfiniteGIF = function(options) {
       let frames = alignGif(inputGif.frames, scaleDiff / scaleStep);
 
       for (let i = 0; i < frames.length; i++) {
-        let frameData = getInfiniteShiftedFrameData(frames[i].bitmap, scales, frames[i].bitmap.width, frames[i].bitmap.height);
+        let frameData = getInfiniteShiftedFrameData(
+          frames[i].bitmap,
+          scales,
+          frames[i].bitmap.width,
+          frames[i].bitmap.height
+        );
         setFrameProperties(frames[i], { bitmap: frameData });
         // Shift scales for next frame
         scales = shiftInfiniteScales(scales, scaleDiff, scaleStep);
@@ -268,6 +259,7 @@ exports.createRotatingPNG = function(options) {
       let {width, height} = preparePNGVariables(options, image);
       let max = Math.max(width, height);
       let encoder = new GIFEncoder(max, max);
+      let direction = options.name === 'spinrev' ? -1 : 1;
 
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
       setEncoderProperties(encoder, options.value * 10)
@@ -282,40 +274,18 @@ exports.createRotatingPNG = function(options) {
         ctx.drawImage(image, 0, 0, width, height);
       }
 
-      addRotateFramesPNG({
-        image: image,
-        canvas: canvas,
-        encoder: encoder,
-        width: width,
-        height: height,
-        name: options.name
-      });
+      for (let i = 0; i < 360; i += 30) {
+        ctx = clearContext(canvas);
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate(direction * i * Math.PI / 180);
+        ctx.drawImage(image, -width / 2, -height / 2, width, height);
+        encoder.addFrame(ctx);
+      }
 
       encoder.finish();
     }).catch(error => reject(error));
   });
 };
-
-function addRotateFramesPNG(options) {
-  if (options.name === 'spinrev') {
-    for (let i = 0; i > -360; i -= 30) {
-      addRotateFramePNG(options, i);
-    }
-  } else {
-    for (let i = 0; i < 360; i += 30) {
-      addRotateFramePNG(options, i);
-    }
-  }
-}
-
-function addRotateFramePNG(options, i) {
-  let canvas = options.canvas;
-  let ctx = clearContext(canvas);
-  ctx.translate(canvas.width / 2, canvas.height / 2);
-  ctx.rotate(i * Math.PI / 180);
-  ctx.drawImage(options.image, -options.width/2, -options.height/2, options.width, options.height);
-  options.encoder.addFrame(ctx);
-}
 
 exports.createShakingPNG = function(options) {
   return new Promise((resolve, reject) => {
@@ -324,46 +294,25 @@ exports.createShakingPNG = function(options) {
 
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
       setEncoderProperties(encoder, options.value * 10);
-      prepareContext(image, width, height);
 
       let canvas = createCanvas(width, height);
-      addShakingFramesPNG({
-        canvas: canvas,
-        image: image,
-        width: width,
-        height: height,
-        encoder: encoder
-      });
+
+      for (let i = 0; i < 4; i++) {
+        ctx = clearContext(canvas);
+        switch (i) {
+          case 0: ctx.translate(width - 1, height - 1); break;
+          case 1: ctx.translate(width - 1, height + 1); break;
+          case 2: ctx.translate(width + 1, height + 1); break;
+          case 3: ctx.translate(width + 1, height - 1); break;
+        }
+        ctx.drawImage(image, -width, -height, width, height);
+        encoder.addFrame(ctx);
+      }
 
       encoder.finish();
     }).catch(error => reject(error));
   });
 };
-
-function addShakingFramesPNG(options) {
-  let canvas = options.canvas;
-  let ctx = clearContext(canvas);
-
-  for (let i = 0; i < 4; i++) {
-    ctx = clearContext(canvas);
-    switch (i) {
-      case 0:
-        ctx.translate(canvas.width - 1, canvas.height - 1);
-        break;
-      case 1:
-        ctx.translate(canvas.width - 1, canvas.height + 1);
-        break;
-      case 2:
-        ctx.translate(canvas.width + 1, canvas.height + 1);
-        break;
-      case 3:
-        ctx.translate(canvas.width + 1, canvas.height - 1);
-        break;
-    }
-    ctx.drawImage(options.image, -options.width, -options.height, options.width, options.height);
-    options.encoder.addFrame(ctx);
-  }
-}
 
 exports.createColorShiftingPNG = function(options) {
   return new Promise((resolve, reject) => {
@@ -379,12 +328,7 @@ exports.createColorShiftingPNG = function(options) {
       let randomWhite = Math.random();
       for (let i = 0; i < amountFrames; i++) {
         let imgData = ctx.getImageData(0, 0, width, height);
-        shiftColors(
-          imgData,
-          interval,
-          randomBlack,
-          randomWhite
-        );
+        shiftColors(imgData, interval, randomBlack, randomWhite);
 
         ctx.putImageData(imgData, 0, 0);
         encoder.addFrame(ctx);
@@ -446,12 +390,23 @@ exports.createWigglingPNG = function(options) {
         let frameData = getWiggledFrameData(image, shift, left, stripeHeight, shiftSize, options);
         encoder.addFrame(frameData.data);
         // Set initial wiggle offset for next frame
-        [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
+        [shift, left] = shiftWiggleStep(shift, left, options.margin, shiftSize);
       }
       encoder.finish();
     }).catch(error => reject(error));
   });
 };
+
+function shiftWiggleStep(shift, left, margin, shiftSize) {
+  if (left) {
+    shift -= shiftSize;
+    if (shift < -shiftSize) left = false;
+  } else {
+    shift += shiftSize;
+    if (shift > margin + shiftSize) left = true;
+  }
+  return [shift, left];
+}
 
 function prepareWiggleVariables(margin) {
   let shiftSize = Math.max(1, Math.floor(margin / 6));
@@ -468,7 +423,7 @@ function getWiggledFrameData(oldFrame, shift, left, stripeHeight, shiftSize, opt
     for (let line = 0; line < stripeHeight; line++) {
       newFrame.blit(oldFrame, shift, stripe + line, 0, stripe + line, oldFrame.bitmap.width, 1);
     }
-    [shift, left] = shiftStep(shift, left, options.margin, shiftSize);
+    [shift, left] = shiftWiggleStep(shift, left, options.margin, shiftSize);
   }
   return newFrame.bitmap;
 }
@@ -599,17 +554,6 @@ function hsl2rgb(h, s, l) {
         b = hue2rgb(p, q, h - 1/3);
     }
     return [ r * 255, g * 255, b * 255 ];
-}
-
-function shiftStep(shift, left, margin, shiftSize) {
-  if (left) {
-    shift -= shiftSize;
-    if (shift < -shiftSize) left = false;
-  } else {
-    shift += shiftSize;
-    if (shift > margin + shiftSize) left = true;
-  }
-  return [shift, left];
 }
 
 function getSizeFromOptions(options) {

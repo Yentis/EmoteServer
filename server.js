@@ -201,11 +201,7 @@ function getCommands(options) {
         special.push(command);
         break;
       case 'slide':
-        let direction = -1; // left
-
-        if (option[1] && option[1] === 'right') {
-          direction = 1;
-        }
+        let direction = option[1] === 'right' ? 1 : -1;
 
         command.name = option[0];
         command.param = direction;
