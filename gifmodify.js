@@ -9,7 +9,6 @@ const {
   GifUtil,
   GifCodec,
   GifFrame,
-  BitmapImage,
 } = require('gifwrap');
 const toStream = require('buffer-to-stream');
 
@@ -20,35 +19,6 @@ function getGifFromBuffer(data) {
         resolve(inputGif);
       }).catch(error => reject(error));
     }).catch(error => reject(error));
-  });
-}
-
-exports.rotateGIF = function(data, degrees) {
-  return new Promise((resolve, reject) => {
-    getGifFromBuffer(data).then(inputGif => {
-      staticRotateGIF(-degrees, inputGif, frames => {
-          let codec = new GifCodec();
-          codec.encodeGif(frames).then(resultGif => {
-            resolve(resultGif.buffer);
-          }).catch(error => reject(error));
-        });
-    }).catch(error => reject(error));
-  });
-};
-
-function staticRotateGIF(degrees, inputGif, callback) {
-  let doneCount = 0;
-
-  inputGif.frames.forEach(frame => {
-    setFrameProperties(frame);
-    const jShared = new Jimp(1, 1, 0);
-    jShared.bitmap = frame.bitmap;
-    jShared.rotate(degrees, false, () => {
-      doneCount++;
-      if (doneCount >= inputGif.frames.length) {
-        callback(inputGif.frames);
-      }
-    });
   });
 }
 
@@ -179,6 +149,10 @@ exports.createWigglingGIF = function(options) {
 exports.createInfiniteGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
+      let encoder = new GIFEncoder(inputGif.width, inputGif.height);
+
+      getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
+      setEncoderProperties(encoder);
 
       let scalesAmount = 5;
       let scaleDiff = 0.9;   // Difference between each scale
@@ -187,20 +161,19 @@ exports.createInfiniteGIF = function(options) {
       let frames = alignGif(inputGif.frames, scaleDiff / scaleStep);
 
       for (let i = 0; i < frames.length; i++) {
+        encoder.setDelay(frames[i].delayCentisecs * 10);
         let frameData = getInfiniteShiftedFrameData(
           frames[i].bitmap,
           scales,
           frames[i].bitmap.width,
           frames[i].bitmap.height
         );
-        setFrameProperties(frames[i], { bitmap: frameData });
+        encoder.addFrame(frameData.data);
         // Shift scales for next frame
         scales = shiftInfiniteScales(scales, scaleDiff, scaleStep);
       }
-      let codec = new GifCodec();
-      codec.encodeGif(frames).then(resultGif => {
-        resolve(resultGif.buffer);
-      });
+
+      encoder.finish();
     }).catch(error => reject(error));
   });
 };
@@ -449,6 +422,7 @@ exports.createInfinitePNG = function(options) {
         // Shift scales for next frame
         scales = shiftInfiniteScales(scales, scaleDiff, scaleStep);
       }
+
       encoder.finish();
     }).catch(error => reject(error));
   });
@@ -462,7 +436,6 @@ function getInfiniteShiftedFrameData(frameBitmap, scales, width, height) {
     scaledFrame.scale(scales[depth]);
     let dx = (scaledFrame.bitmap.width - width) / 2;
     let dy = (scaledFrame.bitmap.height - height) / 2;
-    let imgData, offset;
     // Blit frame properly with respect to the scale
     if (scales[depth] > 1) {
       newFrame.blit(scaledFrame, 0, 0, dx, dy, width, height);
@@ -470,8 +443,6 @@ function getInfiniteShiftedFrameData(frameBitmap, scales, width, height) {
       newFrame.blit(scaledFrame, -dx, -dy);
     }
   }
-  // Jimp's blitting adds too much color info, requantize
-  GifUtil.quantizeDekker(newFrame, 256);
   return newFrame.bitmap;
 }
 
@@ -593,7 +564,9 @@ function setEncoderProperties(encoder, delay) {
   encoder.start();
   encoder.setRepeat(0);
   encoder.setQuality(5);
-  encoder.setDelay(delay);
+  if (delay) {
+    encoder.setDelay(delay);
+  }
   encoder.setTransparent(0x00000000);
 }
 
