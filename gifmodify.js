@@ -49,17 +49,23 @@ exports.createRotatedGIF = function(data, degrees) {
 exports.createRotatingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
-      let centisecsPerRotation = 100; // 1 rotation per second
-      let degrees = 360 * inputGif.frames[0].delayCentisecs  / centisecsPerRotation;
-      let interval = Math.floor(360 / degrees);
+      let { degrees, interval, max, margin } = prepareRotatingVariables(
+        inputGif.frames[0].delayCentisecs, // assuming all frames have the same delay
+        100, // 100cs per rotation -> 1 rotation per second
+        options.name === 'spinrev',
+        { width: inputGif.width, height: inputGif.height },
+      );
       let frames = alignGif(inputGif.frames, interval);
 
-      degrees *= options.name === 'spinrev' ? 1 : -1;
-
       for (let i = 0; i < frames.length; i++) {
-        let rotatedFrame = new Jimp(frames[i].bitmap);
-        rotatedFrame.rotate((i * degrees) % 360, false);
-        setFrameProperties(frames[i], { bitmap: rotatedFrame.bitmap });
+        let adjustedImg = new Jimp(max, max);
+        if (inputGif.width > inputGif.height) {
+          adjustedImg.blit(new Jimp(frames[i].bitmap), 0, margin);
+        } else {
+          adjustedImg.blit(new Jimp(frames[i].bitmap), margin, 0);
+        }
+        adjustedImg.rotate((i * degrees) % 360, false);
+        setFrameProperties(frames[i], { bitmap: adjustedImg.bitmap });
       }
       let codec = new GifCodec();
       codec.encodeGif(frames).then(resultGif => {
@@ -242,36 +248,49 @@ function setFrameProperties(frame, options) {
 
 exports.createRotatingPNG = function(options) {
   return new Promise((resolve, reject) => {
-    loadImage(options.buffer).then(image => {
-      let {width, height} = preparePNGVariables(options, image);
-      let max = Math.max(width, height);
+    Jimp.read(options.buffer).then(image => {
+
+      let { width, height } = preparePNGVariables(options, image.bitmap);
+      let { degrees, interval, max, margin } = prepareRotatingVariables(
+        options.value, // delay
+        100, // 100cs per rotation -> 1 rotation per second
+        options.name === 'spinrev',
+        { width, height }
+      );
       let encoder = new GIFEncoder(max, max);
+      image.resize(width, height);
+
+      let resizedImage = new Jimp(max, max);
+      image = width > height
+        ? resizedImage.blit(image, 0, margin)
+        : resizedImage.blit(image, margin, 0);
 
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
-      setEncoderProperties(encoder, options.value * 10)
-      
-      let canvas = createCanvas(max, max);
-      let ctx = canvas.getContext('2d');
-      ctx.drawImage(image, 0, 0, width, height);
-
-      let centisecsPerRotation = 100; // 1 rotation per second
-      let degrees = 360 * options.value  / centisecsPerRotation;
-      let interval = Math.floor(360 / degrees);
-
-      degrees *= options.name === 'spinrev' ? -1 : 1;
+      setEncoderProperties(encoder, options.value * 10);
 
       for (let i = 0; i < interval; i++) {
-        ctx = clearContext(canvas);
-        ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate(i * degrees * Math.PI / 180);
-        ctx.drawImage(image, -width / 2, -height / 2, width, height);
-        encoder.addFrame(ctx);
+        let rotatedImage = new Jimp(resizedImage.bitmap);
+        rotatedImage.rotate(i * degrees, false);
+        encoder.addFrame(rotatedImage.bitmap.data);
       }
-
       encoder.finish();
     }).catch(error => reject(error));
   });
 };
+
+function prepareRotatingVariables(delay, centisecsPerRotation, reverse, options) {
+  let degrees = 360 * delay / centisecsPerRotation;
+  let interval = Math.floor(360 / degrees);
+  degrees *= reverse ? 1 : -1;
+  let margin = (options.width - options.height) / 2;
+  if (options.height > options.width) margin *= -1;
+  return {
+    degrees,
+    interval,
+    max: Math.max(options.width, options.height),
+    margin,
+  };
+}
 
 exports.createShakingPNG = function(options) {
   return new Promise((resolve, reject) => {
@@ -358,7 +377,7 @@ function shiftColor(imgData, index, shiftAmount, randomBlack, randomWhite) {
 exports.createWigglingPNG = function(options) {
   return new Promise((resolve, reject) => {
     Jimp.read(options.buffer).then(image => {
-      let { width: imgWidth, height} = preparePNGVariables(options, image.bitmap);
+      let { width: imgWidth, height } = preparePNGVariables(options, image.bitmap);
       image.resize(imgWidth, height);
 
       options.height = height;
