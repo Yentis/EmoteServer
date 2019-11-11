@@ -23,7 +23,7 @@ function getGifFromBuffer(data) {
   });
 }
 
-exports.rotateGIF = function(data, degrees) {
+exports.createRotatedGIF = function(data, degrees) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(data).then(inputGif => {
 
@@ -31,8 +31,7 @@ exports.rotateGIF = function(data, degrees) {
 
       inputGif.frames.forEach(frame => {
         setFrameProperties(frame);
-        const jShared = new Jimp(1, 1, 0);
-        jShared.bitmap = frame.bitmap;
+        const jShared = new Jimp(frame.bitmap);
         jShared.rotate(degrees, false, () => {
           doneCount++;
           if (doneCount >= inputGif.frames.length) {
@@ -247,25 +246,24 @@ exports.createRotatingPNG = function(options) {
       let {width, height} = preparePNGVariables(options, image);
       let max = Math.max(width, height);
       let encoder = new GIFEncoder(max, max);
-      let direction = options.name === 'spinrev' ? -1 : 1;
 
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
       setEncoderProperties(encoder, options.value * 10)
       
       let canvas = createCanvas(max, max);
       let ctx = canvas.getContext('2d');
-      if (height < width) {
-        ctx.drawImage(image, 0, (width - height) / 2, width, height);
-      } else if (width < height) {
-        ctx.drawImage(image, (height - width) / 2, 0, width, height);
-      } else { // height == width
-        ctx.drawImage(image, 0, 0, width, height);
-      }
+      ctx.drawImage(image, 0, 0, width, height);
 
-      for (let i = 0; i < 360; i += 30) {
+      let centisecsPerRotation = 100; // 1 rotation per second
+      let degrees = 360 * options.value  / centisecsPerRotation;
+      let interval = Math.floor(360 / degrees);
+
+      degrees *= options.name === 'spinrev' ? -1 : 1;
+
+      for (let i = 0; i < interval; i++) {
         ctx = clearContext(canvas);
         ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate(direction * i * Math.PI / 180);
+        ctx.rotate(i * degrees * Math.PI / 180);
         ctx.drawImage(image, -width / 2, -height / 2, width, height);
         encoder.addFrame(ctx);
       }
