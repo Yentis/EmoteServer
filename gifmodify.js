@@ -118,6 +118,13 @@ exports.createShakingGIF = function(options) {
 
       if (delay !== speed) {
         let padAmount = lcm(delay, speed) / speed;
+        // If the padded gif would have too many frames already (800 is arbitrary)
+        if (frames.length * padAmount > 800) {
+          // Delete every second frame
+          frames = frames.filter((_, i) => i % 2 === 0);
+          delay *= 2;
+          speed *= 2;
+        }
         frames = padGif(frames, padAmount);
         if (delay > speed) {
           delay /= padAmount;
@@ -145,14 +152,6 @@ exports.createShakingGIF = function(options) {
         // Not sure why this here is needed and also no clue whether this breaks the result for some gifs
         incrValue *= 4;
       }
-
-      console.log("[Frames] \tBefore:", inputGif.frames.length, 
-        " \t~  After:", frames.length, 
-        "\t=>", 100 * Math.max(inputGif.frames.length / frames.length, frames.length / inputGif.frames.length) + "%");
-      console.log("[Delay] \tBefore:", inputGif.frames[0].delayCentisecs, 
-        " \t~  After:", delay, 
-        "\t=>", 100 * Math.max(inputGif.frames[0].delayCentisecs / delay, delay / inputGif.frames[0].delayCentisecs) + "%");
-      console.log("[Step]  \tInterval:", interval, " \t~  incrValue:", incrValue);
 
       let dx = 0, dy = 0, sx = 1, sy = 1;
       // Move dx dy sx dy: 0011 (3) -> 0110 (6) -> 1100 (12) -> 1001 (9) -> 0011 (3)
