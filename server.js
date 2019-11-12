@@ -173,11 +173,27 @@ function getCommands(options) {
       case 'resize':
         command.name = '--scale';
         command.param = option[1];
-        priority.push(command);
+
+        let split = command.param.toString().split('x');
+        let shouldProcessAfter = false;
+        split.forEach(axis => {
+          if (axis >= 1) shouldProcessAfter = true;
+        })
+
+        if (shouldProcessAfter) {
+          normal.push(command);
+        } else {
+          priority.push(command);
+        }
         break;
       case 'reverse':
         command.name = '#-1-0';
-        priority.push(command);
+        normal.push(command);
+        break;
+      case 'rotate':
+        command.name = '--rotate-' + option[1];
+        command.param = '#0-';
+        normal.push(command);
         break;
       case 'flip':
         command.name = '--flip-horizontal';
@@ -194,11 +210,6 @@ function getCommands(options) {
       case 'hyperspeed':
         command.name = '-I';
         normal.push(command);
-        break;
-      case 'rotate':
-        command.name = option[0];
-        command.param = option[1];
-        special.push(command);
         break;
       case 'slide':
         let direction = option[1] === 'right' ? 1 : -1;
@@ -240,8 +251,11 @@ function processCommands(data) {
     
     //We resize pngs through the canvas
     if (fileType === 'png') {
-      let size = data.commands.priority[1].param;
-      processSpecialCommands({data: buffer, commands: data.commands.special, fileType: fileType, size: size})
+      let size;
+      if (data.commands.priority[1]) {
+        size = data.commands.priority[1].param;
+      }
+      processSpecialCommands({data: buffer, commands: data.commands.special, fileType, size})
         .then(buffer => {
         processNormalCommands(buffer, data.commands.normal)
           .then(buffer => resolve(buffer))
@@ -304,7 +318,7 @@ function processSpecialCommands(options) {
             value: parseInt(commands[i].param), 
             buffer: currentBuffer, 
             type: i === 0 ? options.fileType : 'gif',
-            size: options.size || 32,
+            size: options.size || 1,
             isResized: i > 0
           }).then(buffer => {
             currentBuffer = buffer;
@@ -332,9 +346,6 @@ function processSpecialCommand(command) {
       case 'shake':
         type = command.type === 'gif' ? 'createShakingGIF' : 'createShakingPNG';
         gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
-        break;
-      case 'rotate':
-        gifmodify.rotateGIF(command.buffer, command.value).then(buffer => resolve(buffer)).catch(err => reject(err));
         break;
       case 'rainbow':
         type = command.type === 'gif' ? 'createColorShiftingGIF' : 'createColorShiftingPNG';
