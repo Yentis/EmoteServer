@@ -25,29 +25,28 @@ function getGifFromBuffer(data) {
 exports.createRotatingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
-      const interval = 12;
-      let degrees = options.name === 'spinrev' ? 30 : -30;
+      let { degrees, interval, max, margin } = prepareRotatingVariables(
+        inputGif.frames[0].delayCentisecs, // assuming all frames have the same delay
+        100, // 100cs per rotation -> 1 rotation per second
+        options.name === 'spinrev',
+        { width: inputGif.width, height: inputGif.height },
+      );
       let frames = alignGif(inputGif.frames, interval);
-      let doneCount = 0;
-      let curFrame = 0;
-      for (let i = 0; i < (frames.length / interval); i++) {
-        for (let j = 0; j < interval; j++) {
-          let frame = frames[curFrame];
-          setFrameProperties(frame, { delayCentisecs: Math.max(2, options.value) });
-          const jShared = new Jimp(1, 1, 0);
-          jShared.bitmap = frame.bitmap;
-          jShared.rotate(degrees * j, false, () => {
-            doneCount++;
-            if (doneCount >= frames.length) {
-              let codec = new GifCodec();
-              codec.encodeGif(frames).then(resultGif => {
-                resolve(resultGif.buffer);
-              });
-            }
-          });
-          curFrame++;
+
+      for (let i = 0; i < frames.length; i++) {
+        let adjustedImg = new Jimp(max, max);
+        if (inputGif.width > inputGif.height) {
+          adjustedImg.blit(new Jimp(frames[i].bitmap), 0, margin);
+        } else {
+          adjustedImg.blit(new Jimp(frames[i].bitmap), margin, 0);
         }
+        adjustedImg.rotate((i * degrees) % 360, false);
+        setFrameProperties(frames[i], { bitmap: adjustedImg.bitmap });
       }
+      let codec = new GifCodec();
+      codec.encodeGif(frames).then(resultGif => {
+        resolve(resultGif.buffer);
+      });
     }).catch(error => reject(error));
   });
 };
@@ -228,37 +227,49 @@ function setFrameProperties(frame, options) {
 
 exports.createRotatingPNG = function(options) {
   return new Promise((resolve, reject) => {
-    loadImage(options.buffer).then(image => {
-      let {width, height} = preparePNGVariables(options, image);
-      let max = Math.max(width, height);
+    Jimp.read(options.buffer).then(image => {
+
+      let { width, height } = preparePNGVariables(options, image.bitmap);
+      let { degrees, interval, max, margin } = prepareRotatingVariables(
+        options.value, // delay
+        100, // 100cs per rotation -> 1 rotation per second
+        options.name === 'spinrev',
+        { width, height }
+      );
       let encoder = new GIFEncoder(max, max);
-      let direction = options.name === 'spinrev' ? -1 : 1;
+      image.resize(width, height);
+
+      let resizedImage = new Jimp(max, max);
+      image = width > height
+        ? resizedImage.blit(image, 0, margin)
+        : resizedImage.blit(image, margin, 0);
 
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
-      setEncoderProperties(encoder, options.value * 10)
-      
-      let canvas = createCanvas(max, max);
-      let ctx = canvas.getContext('2d');
-      if (height < width) {
-        ctx.drawImage(image, 0, (width - height) / 2, width, height);
-      } else if (width < height) {
-        ctx.drawImage(image, (height - width) / 2, 0, width, height);
-      } else { // height == width
-        ctx.drawImage(image, 0, 0, width, height);
-      }
+      setEncoderProperties(encoder, options.value * 10);
 
-      for (let i = 0; i < 360; i += 30) {
-        ctx = clearContext(canvas);
-        ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate(direction * i * Math.PI / 180);
-        ctx.drawImage(image, -width / 2, -height / 2, width, height);
-        encoder.addFrame(ctx);
+      for (let i = 0; i < interval; i++) {
+        let rotatedImage = new Jimp(resizedImage.bitmap);
+        rotatedImage.rotate(i * degrees, false);
+        encoder.addFrame(rotatedImage.bitmap.data);
       }
-
       encoder.finish();
     }).catch(error => reject(error));
   });
 };
+
+function prepareRotatingVariables(delay, centisecsPerRotation, reverse, options) {
+  let degrees = 360 * delay / centisecsPerRotation;
+  let interval = Math.floor(360 / degrees);
+  degrees *= reverse ? 1 : -1;
+  let margin = (options.width - options.height) / 2;
+  if (options.height > options.width) margin *= -1;
+  return {
+    degrees,
+    interval,
+    max: Math.max(options.width, options.height),
+    margin,
+  };
+}
 
 exports.createShakingPNG = function(options) {
   return new Promise((resolve, reject) => {
@@ -345,7 +356,7 @@ function shiftColor(imgData, index, shiftAmount, randomBlack, randomWhite) {
 exports.createWigglingPNG = function(options) {
   return new Promise((resolve, reject) => {
     Jimp.read(options.buffer).then(image => {
-      let { width: imgWidth, height} = preparePNGVariables(options, image.bitmap);
+      let { width: imgWidth, height } = preparePNGVariables(options, image.bitmap);
       image.resize(imgWidth, height);
 
       options.height = height;
@@ -615,13 +626,24 @@ function getBuffer(data) {
 }
 
 function alignGif(frames, interval) {
+  // Duplicate frames until interval is reached
   let alignedFrames = GifUtil.cloneFrames(frames);
   while (alignedFrames.length < interval) {
     alignedFrames = alignedFrames.concat(GifUtil.cloneFrames(frames));
   }
-  let amountCopies = alignedFrames.length / frames.length;
 
   let framesToDelete = alignedFrames.length % interval;
+  /*
+    Removing more than 20% of frames makes it look sucky => add copies until it's below 20%
+    Worst case: interval = (frames.length / 2) + 1 e.g. interval 17 with 32 frames
+    then framesToDelete = 15/32 (46.9%) -> 13/64 (20.3%) -> 11/96 (11.4%)
+  */
+  while (framesToDelete / alignedFrames.length > 0.2) {
+    alignedFrames = alignedFrames.concat(GifUtil.cloneFrames(frames));
+    framesToDelete = alignedFrames.length % interval;
+  }
+
+  let amountCopies = alignedFrames.length / frames.length;
   let currentCopy = 0;
 
   for (let i = 0; i < framesToDelete; i++) {
