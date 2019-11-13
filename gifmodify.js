@@ -29,7 +29,8 @@ exports.createRotatingGIF = function(options) {
         inputGif.frames[0].delayCentisecs, // assuming all frames have the same delay
         100, // 100cs per rotation -> 1 rotation per second
         options.name === 'spinrev',
-        { width: inputGif.width, height: inputGif.height },
+        inputGif.width,
+        inputGif.height
       );
       let frames = alignGif(inputGif.frames, interval);
 
@@ -158,12 +159,7 @@ exports.createInfiniteGIF = function(options) {
 
       for (let i = 0; i < frames.length; i++) {
         encoder.setDelay(frames[i].delayCentisecs * 10);
-        let frameData = getInfiniteShiftedFrameData(
-          frames[i].bitmap,
-          scales,
-          frames[i].bitmap.width,
-          frames[i].bitmap.height
-        );
+        let frameData = getInfiniteShiftedFrameData(frames[i].bitmap, scales);
         encoder.addFrame(frameData.data);
         // Shift scales for next frame
         scales = shiftInfiniteScales(scales, scaleDiff, scaleStep);
@@ -197,13 +193,13 @@ exports.createSlidingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
       let width = inputGif.width;
-      let { interval, direction, shift, shiftSize } = prepareSlidingVariables(options, width);
+      let { interval, shift, shiftSize } = prepareSlidingVariables(width);
       let frames = alignGif(inputGif.frames, interval);
       
       for (let i = 0; i < frames.length; i++) {
         let frameData = getShiftedFrameData(new Jimp(frames[i].bitmap), shift);
         setFrameProperties(frames[i], { bitmap: frameData });
-        shift = (shift + direction * shiftSize) % width;
+        shift = (shift + options.value * shiftSize) % width;
       }
       let codec = new GifCodec();
       codec.encodeGif(frames).then(resultGif => {
@@ -231,7 +227,8 @@ exports.createRotatingPNG = function(options) {
         options.value, // delay
         100, // 100cs per rotation -> 1 rotation per second
         options.name === 'spinrev',
-        { width, height }
+        width,
+        height
       );
       let encoder = new GIFEncoder(max, max);
       image.resize(width, height);
@@ -254,16 +251,16 @@ exports.createRotatingPNG = function(options) {
   });
 };
 
-function prepareRotatingVariables(delay, centisecsPerRotation, reverse, options) {
+function prepareRotatingVariables(delay, centisecsPerRotation, reverse, width, height) {
   let degrees = 360 * delay / centisecsPerRotation;
   let interval = Math.floor(360 / degrees);
   degrees *= reverse ? 1 : -1;
-  let margin = (options.width - options.height) / 2;
-  if (options.height > options.width) margin *= -1;
+  let margin = (width - height) / 2;
+  if (height > width) margin *= -1;
   return {
     degrees,
     interval,
-    max: Math.max(options.width, options.height),
+    max: Math.max(width, height),
     margin,
   };
 }
@@ -423,7 +420,7 @@ exports.createInfinitePNG = function(options) {
       let scales = resetInfiniteScales(scalesAmount, scaleDiff, scaleStep);
 
       for (let i = 0; i < frames; i++) {
-        let frameData = getInfiniteShiftedFrameData(image.bitmap, scales, width, height);
+        let frameData = getInfiniteShiftedFrameData(image.bitmap, scales);
         encoder.addFrame(frameData.data);
         // Shift scales for next frame
         scales = shiftInfiniteScales(scales, scaleDiff, scaleStep);
@@ -434,17 +431,17 @@ exports.createInfinitePNG = function(options) {
   });
 };
 
-function getInfiniteShiftedFrameData(frameBitmap, scales, width, height) {
-  let newFrame = new Jimp(width, height, 0x00);
+function getInfiniteShiftedFrameData(frameBitmap, scales) {
+  let newFrame = new Jimp(frameBitmap.width, frameBitmap.height, 0x00);
   // Add appropriate frame with each depth scale
   for (let depth = 0; depth < scales.length; depth++) {
     let scaledFrame = new Jimp(frameBitmap);
     scaledFrame.scale(scales[depth]);
-    let dx = (scaledFrame.bitmap.width - width) / 2;
-    let dy = (scaledFrame.bitmap.height - height) / 2;
+    let dx = (scaledFrame.bitmap.width - frameBitmap.width) / 2;
+    let dy = (scaledFrame.bitmap.height - frameBitmap.height) / 2;
     // Blit frame properly with respect to the scale
     if (scales[depth] > 1) {
-      newFrame.blit(scaledFrame, 0, 0, dx, dy, width, height);
+      newFrame.blit(scaledFrame, 0, 0, dx, dy, frameBitmap.width, frameBitmap.height);
     } else {
       newFrame.blit(scaledFrame, -dx, -dy);
     }
@@ -456,28 +453,27 @@ exports.createSlidingPNG = function(options) {
   return new Promise((resolve, reject) => {
     Jimp.read(options.buffer).then(image => {
       let { width, height, encoder } = preparePNGVariables(options, image.bitmap);
-      let { interval, direction, shift, shiftSize } = prepareSlidingVariables(options, width);
+      let { interval, shift, shiftSize } = prepareSlidingVariables(width);
       image.resize(width, height);
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
       setEncoderProperties(encoder, 80);
       for (let i = 0; i < interval; i++) {
         let frameData = getShiftedFrameData(image, Math.floor(shift));
         encoder.addFrame(frameData.data);
-        shift = (shift + direction * shiftSize) % width;
+        shift = (shift + options.value * shiftSize) % width;
       }
       encoder.finish();
     }).catch(error => reject(error));
   });
 };
 
-function prepareSlidingVariables(options, width) {
+function prepareSlidingVariables(width) {
   let interval = 16;
   return {
     interval,
-    direction: options.value,
     shift: 0,
     shiftSize: width / interval,
-  }
+  };
 }
 
 function getShiftedFrameData(oldFrame, shift) {
