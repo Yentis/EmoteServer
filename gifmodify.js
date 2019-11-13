@@ -388,7 +388,7 @@ function shiftWiggleStep(shift, left, margin, shiftSize) {
 function prepareWiggleVariables(margin, height) {
   let shiftSize = Math.max(1, Math.floor(margin / 6));
   let interval = 2 * (margin / shiftSize + 4);
-  let stripeHeight = Math.floor(height / 32);
+  let stripeHeight = Math.max(1, Math.floor(height / 32));
   let shift = margin / 2; // Initial offset of wiggle
   let left = true;        // true -> go to left
   return { shiftSize, interval, stripeHeight, shift, left };
