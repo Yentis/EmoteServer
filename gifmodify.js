@@ -27,7 +27,7 @@ exports.createRotatingGIF = function(options) {
     getGifFromBuffer(options.buffer).then(inputGif => {
       let { degrees, interval, max, margin } = prepareRotatingVariables(
         inputGif.frames[0].delayCentisecs, // assuming all frames have the same delay
-        100, // 100cs per rotation -> 1 rotation per second
+        200 * options.value / 8, // 100cs per rotation -> 1 rotation per second
         options.name === 'spinrev',
         { width: inputGif.width, height: inputGif.height },
       );
@@ -94,7 +94,7 @@ exports.createColorShiftingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
 
-      let interval = 32;
+      let interval = 32 * options.value;
       let frames = alignGif(inputGif.frames, interval);
       let randomBlack = Math.random();
       let randomWhite = Math.random();
@@ -155,7 +155,7 @@ exports.createInfiniteGIF = function(options) {
 
       let scalesAmount = 5;
       let scaleDiff = 0.9;   // Difference between each scale
-      let scaleStep = 0.03;  // Scale shift between frames
+      let scaleStep = 0.03 * 8 / options.value;  // Scale shift between frames
       let scales = resetInfiniteScales(scalesAmount, scaleDiff, scaleStep);
       let frames = alignGif(inputGif.frames, scaleDiff / scaleStep);
 
