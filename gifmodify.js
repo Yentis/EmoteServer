@@ -116,12 +116,11 @@ exports.createWigglingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
 
-      let imgWidth = inputGif.frames[0].bitmap.width;
+      let imgWidth = inputGif.width;
       let width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width wiggle room on both sides
-      let height = inputGif.frames[0].bitmap.height;
       let margin = width - imgWidth;
 
-      let { shiftSize, interval, stripeHeight, shift, left } = prepareWiggleVariables(margin);
+      let { shiftSize, interval, stripeHeight, shift, left } = prepareWiggleVariables(margin, inputGif.height);
       let frames = alignGif(inputGif.frames, interval);
 
       for (let i = 0; i < frames.length; i++) {
@@ -361,7 +360,7 @@ exports.createWigglingPNG = function(options) {
       let margin = width - imgWidth;
 
       let encoder = new GIFEncoder(width, height);
-      let { shiftSize, interval, stripeHeight, shift, left } = prepareWiggleVariables(margin);
+      let { shiftSize, interval, stripeHeight, shift, left } = prepareWiggleVariables(margin, height);
 
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
       setEncoderProperties(encoder, options.value * 10);
@@ -389,10 +388,10 @@ function shiftWiggleStep(shift, left, margin, shiftSize) {
   return [shift, left];
 }
 
-function prepareWiggleVariables(margin) {
+function prepareWiggleVariables(margin, height) {
   let shiftSize = Math.max(1, Math.floor(margin / 6));
   let interval = 2 * (margin / shiftSize + 4);
-  let stripeHeight = 2 * shiftSize;
+  let stripeHeight = Math.floor(height / 32);
   let shift = margin / 2; // Initial offset of wiggle
   let left = true;        // true -> go to left
   return { shiftSize, interval, stripeHeight, shift, left };
