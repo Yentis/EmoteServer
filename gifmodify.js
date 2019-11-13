@@ -117,11 +117,11 @@ exports.createWigglingGIF = function(options) {
     getGifFromBuffer(options.buffer).then(inputGif => {
 
       let imgWidth = inputGif.frames[0].bitmap.width;
-      options.width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width wiggle room on both sides
-      options.height = inputGif.frames[0].bitmap.height;
-      options.margin = options.width - imgWidth;
+      let width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width wiggle room on both sides
+      let height = inputGif.frames[0].bitmap.height;
+      let margin = width - imgWidth;
 
-      let {shiftSize, interval, stripeHeight, shift, left} = prepareWiggleVariables(options.margin);
+      let { shiftSize, interval, stripeHeight, shift, left } = prepareWiggleVariables(margin);
       let frames = alignGif(inputGif.frames, interval);
 
       for (let i = 0; i < frames.length; i++) {
@@ -129,13 +129,11 @@ exports.createWigglingGIF = function(options) {
           new Jimp(frames[i].bitmap),
           shift,
           left,
-          stripeHeight,
-          shiftSize,
-          options
+          { stripeHeight, shiftSize, width, margin },
         );
         setFrameProperties(frames[i], { bitmap: frameData });
         // Set initial wiggle offset for next frame
-        [shift, left] = shiftWiggleStep(shift, left, options.margin, shiftSize);
+        [shift, left] = shiftWiggleStep(shift, left, margin, shiftSize);
       }
       let codec = new GifCodec();
       codec.encodeGif(frames).then(resultGif => {
@@ -359,22 +357,21 @@ exports.createWigglingPNG = function(options) {
       let { width: imgWidth, height } = preparePNGVariables(options, image.bitmap);
       image.resize(imgWidth, height);
 
-      options.height = height;
-      options.width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width is wiggle room for both sides
-      options.margin = options.width - imgWidth;
+      let width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width is wiggle room for both sides
+      let margin = width - imgWidth;
 
-      let encoder = new GIFEncoder(options.width, height);
-      let {shiftSize, interval, stripeHeight, shift, left} = prepareWiggleVariables(options.margin);
+      let encoder = new GIFEncoder(width, height);
+      let { shiftSize, interval, stripeHeight, shift, left } = prepareWiggleVariables(margin);
 
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
-      setEncoderProperties(encoder, options.value * 5);
+      setEncoderProperties(encoder, options.value * 10);
 
       for (let i = 0; i < interval; i++) {
         // Wiggle frame
-        let frameData = getWiggledFrameData(image, shift, left, stripeHeight, shiftSize, options);
+        let frameData = getWiggledFrameData(image, shift, left, { stripeHeight, shiftSize, width, margin });
         encoder.addFrame(frameData.data);
         // Set initial wiggle offset for next frame
-        [shift, left] = shiftWiggleStep(shift, left, options.margin, shiftSize);
+        [shift, left] = shiftWiggleStep(shift, left, margin, shiftSize);
       }
       encoder.finish();
     }).catch(error => reject(error));
@@ -401,13 +398,12 @@ function prepareWiggleVariables(margin) {
   return { shiftSize, interval, stripeHeight, shift, left };
 }
 
-function getWiggledFrameData(oldFrame, shift, left, stripeHeight, shiftSize, options) {
-  let newFrame = new Jimp(options.width, options.height, 0x00);
-  for (let stripe = 0; stripe < options.height; stripe += stripeHeight) {
-    for (let line = 0; line < stripeHeight; line++) {
-      newFrame.blit(oldFrame, shift, stripe + line, 0, stripe + line, oldFrame.bitmap.width, 1);
-    }
-    [shift, left] = shiftWiggleStep(shift, left, options.margin, shiftSize);
+function getWiggledFrameData(oldFrame, shift, left, options) {
+  let newFrame = new Jimp(options.width, oldFrame.bitmap.height, 0x00);
+  // Wiggle each stripe
+  for (let stripe = 0; stripe < oldFrame.bitmap.height; stripe += options.stripeHeight) {
+    newFrame.blit(oldFrame, shift, stripe, 0, stripe, oldFrame.bitmap.width, options.stripeHeight);
+    [shift, left] = shiftWiggleStep(shift, left, options.margin, options.shiftSize);
   }
   return newFrame.bitmap;
 }

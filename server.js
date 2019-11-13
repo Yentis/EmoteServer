@@ -178,7 +178,7 @@ function getCommands(options) {
         let shouldProcessAfter = false;
         split.forEach(axis => {
           if (axis >= 1) shouldProcessAfter = true;
-        })
+        });
 
         if (shouldProcessAfter) {
           normal.push(command);
