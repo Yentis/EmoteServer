@@ -8,7 +8,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const base64 = require('base-64');
 const toStream = require('buffer-to-stream');
-const gifmodify = require('./gifmodify.js');
+const gifhelper = require('./gifhelper.js');
 const githelper = require('./githelper.js');
 const app = express();
 let jsonParser = bodyParser.json({
@@ -22,7 +22,7 @@ const logger = winston.createLogger({
   ]
 });
 
-app.use(function(req, res, next) {
+app.use(function (req, res, next) {
   res.setHeader('Access-Control-Allow-Origin', 'https://discordapp.com');
   res.setHeader('Access-Control-Allow-Methods', 'POST');
   res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type');
@@ -52,34 +52,34 @@ const fileInfo = {
   jsonEncode: true
 };
 
-app.post('/commit', jsonParser, function(req, res) {
-  if(!isBodyValid(req.body, 'newemote')) {
+app.post('/commit', jsonParser, function (req, res) {
+  if (!isBodyValid(req.body, 'newemote')) {
     logger.log('warn', 'Received invalid commit request', req.body);
     return res.sendStatus(400);
   }
-  
+
   githelper.getFile(fileInfo.jsonPath)
     .then((emoteList) => {
-    logger.log('info', 'Got emote list');
-    let file = processData(req.body, JSON.parse(emoteList));
-    if (file.err) {
-      logger.log('warn', 'Failed to process data', file.err);
-      res.end(file.err.toString());
-    } else {
-      logger.log('info', 'Processed emote data');
-      commitEmote(file, req.body.username)
-        .then(() => {
-        logger.log('info', 'Emote added');
-        res.end('ok');
-      }).catch(err => {
-        logger.log('warn', 'Failed to add emote', err);
-        res.end(err.toString());
-      });
-    };
+      logger.log('info', 'Got emote list');
+      let file = processData(req.body, JSON.parse(emoteList));
+      if (file.err) {
+        logger.log('warn', 'Failed to process data', file.err);
+        res.end(file.err.toString());
+      } else {
+        logger.log('info', 'Processed emote data');
+        commitEmote(file, req.body.username)
+          .then(() => {
+            logger.log('info', 'Emote added');
+            res.end('ok');
+          }).catch(err => {
+            logger.log('warn', 'Failed to add emote', err);
+            res.end(err.toString());
+          });
+      };
     }).catch(err => {
-    logger.log('warn', 'Failed to get emote list', err);
-    res.end(err.toString());
-  });
+      logger.log('warn', 'Failed to get emote list', err);
+      res.end(err.toString());
+    });
 });
 
 function commitEmote(file, username) {
@@ -103,7 +103,9 @@ function commitEmote(file, username) {
 function processData(data, emotes) {
   let file = data.file;
   if (checkNameExists(file.emoteName, emotes)) {
-    return {err: "Emote name already exists!"};
+    return {
+      err: "Emote name already exists!"
+    };
   }
 
   let emoteNumber = Object.keys(emotes).length + 1;
@@ -111,7 +113,9 @@ function processData(data, emotes) {
   emotes[emoteNumber] = file.emoteName + file.extension;
   let newJson = JSON.stringify(emotes);
   if (newJson === undefined) {
-    return {err: "A problem occurred while adding your emote, please check your file."};
+    return {
+      err: "A problem occurred while adding your emote, please check your file."
+    };
   }
 
   return {
@@ -140,18 +144,20 @@ function checkNameExists(emoteName, existingNames) {
 
 
 app.post('/modifygif', jsonParser, (req, res) => {
-  if(!isBodyValid(req.body, 'modify')) {
+  if (!isBodyValid(req.body, 'modify')) {
     logger.log('warn', 'Received invalid modify request', req.body);
     return res.sendStatus(400);
   }
-  
+
   let data = req.body;
   data.commands = getCommands(data.options);
   logger.log('info', 'Processed request commands', data.commands);
-  
+
   processCommands(data)
     .then(buffer => {
-      logger.log('info', 'Processed modified emote', {length: buffer.length});
+      logger.log('info', 'Processed modified emote', {
+        length: buffer.length
+      });
       res.status(200);
       res.send(buffer.toString('base64'));
     }).catch(err => {
@@ -164,7 +170,9 @@ app.post('/modifygif', jsonParser, (req, res) => {
 function getCommands(options) {
   let normal = [];
   let special = [];
-  let priority = [{name: '-U'}];
+  let priority = [{
+    name: '-U'
+  }];
   let command = {};
 
   options.forEach((option) => {
@@ -211,13 +219,6 @@ function getCommands(options) {
         command.name = '-I';
         normal.push(command);
         break;
-      case 'slide':
-        let direction = option[1] === 'right' ? 1 : -1;
-
-        command.name = option[0];
-        command.param = direction;
-        special.push(command);
-        break;
       case 'wiggle':
         let size = 2;
 
@@ -238,6 +239,7 @@ function getCommands(options) {
       case 'shake':
       case 'rainbow':
       case 'infinite':
+      case 'slide':
         let speed = 8;
 
         if (option[1]) {
@@ -255,37 +257,49 @@ function getCommands(options) {
     }
   });
 
-  return {priority, special, normal};
+  return {
+    priority,
+    special,
+    normal
+  };
 }
 
 function processCommands(data) {
   return new Promise((resolve, reject) => {
     let fileType = data.url.endsWith('gif') ? 'gif' : 'png';
     let buffer = data.url;
-    
-    //We resize pngs through the canvas
+
     if (fileType === 'png') {
       let size;
       if (data.commands.priority[1]) {
         size = data.commands.priority[1].param;
       }
-      processSpecialCommands({data: buffer, commands: data.commands.special, fileType, size})
+      processSpecialCommands({
+          data: buffer,
+          commands: data.commands.special,
+          fileType,
+          size
+        })
         .then(buffer => {
-        processNormalCommands(buffer, data.commands.normal)
-          .then(buffer => resolve(buffer))
-          .catch(err => reject(err));
-      }).catch(err => reject(err));
-    } else {
-      //Resize and unoptimize
-      modifyGif(buffer, data.commands.priority)
-        .then(buffer => {
-        processSpecialCommands({data: buffer, commands: data.commands.special, fileType: fileType})
-          .then(buffer => {
           processNormalCommands(buffer, data.commands.normal)
             .then(buffer => resolve(buffer))
             .catch(err => reject(err));
         }).catch(err => reject(err));
-      }).catch(err => reject(err));
+    } else {
+      //Resize and unoptimize
+      modifyGif(buffer, data.commands.priority)
+        .then(buffer => {
+          processSpecialCommands({
+              data: buffer,
+              commands: data.commands.special,
+              fileType: fileType
+            })
+            .then(buffer => {
+              processNormalCommands(buffer, data.commands.normal)
+                .then(buffer => resolve(buffer))
+                .catch(err => reject(err));
+            }).catch(err => reject(err));
+        }).catch(err => reject(err));
     }
   });
 }
@@ -301,7 +315,7 @@ function modifyGif(data, options) {
     });
     let gifProcessor = new Gifsicle(gifsicleParams);
     let readStream;
-    
+
     if (Buffer.isBuffer(data)) readStream = toStream(data);
     else {
       readStream = request(data, (err) => {
@@ -323,14 +337,14 @@ function processSpecialCommands(options) {
     let commands = options.commands;
     if (commands.length > 0) {
       let currentBuffer = options.data;
-      
+
       logger.log('info', 'Commands count: ' + commands.length);
       for (let i = 0, p = Promise.resolve(); i < commands.length; i++) {
         p = p.then(_ => new Promise((resolve, reject) => {
           processSpecialCommand({
-            name: commands[i].name, 
-            value: parseInt(commands[i].param), 
-            buffer: currentBuffer, 
+            name: commands[i].name,
+            value: parseInt(commands[i].param),
+            buffer: currentBuffer,
             type: i === 0 ? options.fileType : 'gif',
             size: options.size || 1,
             isResized: i > 0
@@ -349,33 +363,27 @@ function processSpecialCommands(options) {
 function processSpecialCommand(command) {
   return new Promise((resolve, reject) => {
     let type = '';
-    
+
     logger.log('info', 'Command name: ' + command.name);
     switch (command.name) {
       case 'spin':
       case 'spinrev':
-        type = command.type === 'gif' ? 'createRotatingGIF' : 'createRotatingPNG';
-        gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
+        gifhelper.spinEmote(command).then(resolve).catch(reject);
         break;
       case 'shake':
-        type = command.type === 'gif' ? 'createShakingGIF' : 'createShakingPNG';
-        gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
+        gifhelper.shakeEmote(command).then(resolve).catch(reject);
         break;
       case 'rainbow':
-        type = command.type === 'gif' ? 'createColorShiftingGIF' : 'createColorShiftingPNG';
-        gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
+        gifhelper.rainbowEmote(command).then(resolve).catch(reject);
         break;
       case 'wiggle':
-        type = command.type === 'gif' ? 'createWigglingGIF' : 'createWigglingPNG';
-        gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
+        gifhelper.wiggleEmote(command).then(resolve).catch(reject);
         break;
       case 'infinite':
-        type = command.type === 'gif' ? 'createInfiniteGIF' : 'createInfinitePNG';
-        gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
+        gifhelper.infiniteEmote(command).then(resolve).catch(reject);
         break;
       case 'slide':
-        type = command.type === 'gif' ? 'createSlidingGIF' : 'createSlidingPNG';
-        gifmodify[type](command).then(buffer => resolve(buffer)).catch(err => reject(err));
+        gifhelper.slideEmote(command).then(resolve).catch(reject);
         break;
       default:
         resolve(command.buffer);
@@ -386,19 +394,22 @@ function processSpecialCommand(command) {
 
 function processNormalCommands(data, commands) {
   return new Promise((resolve, reject) => {
-    if(commands.length > 0) {
+    if (commands.length > 0) {
       modifyGif(data, commands)
         .then((buffer) => {
-        //an asterisk, signifying info data
-        if (buffer[0] === 42) {
-          commands = commands.filter(trimInfoTag);
-          commands = removeEveryOtherFrame(2, commands, buffer);
-          modifyGif(data, commands)
-            .then((buffer) => {
-            resolve(buffer);
-          }).catch(err => reject(err));
-        } else resolve(buffer);
-      }).catch(err => reject(err));
+          //an asterisk, signifying info data
+          if (buffer[0] === 42) {
+            commands = commands.filter(trimInfoTag);
+            commands = removeEveryOtherFrame(2, commands, buffer);
+            commands.push({
+              name: '-O'
+            })
+            modifyGif(data, commands)
+              .then((buffer) => {
+                resolve(buffer);
+              }).catch(err => reject(err));
+          } else resolve(buffer);
+        }).catch(err => reject(err));
     } else resolve(data);
   });
 }
@@ -408,23 +419,29 @@ function trimInfoTag(command) {
 }
 
 function removeEveryOtherFrame(n, commands, data) {
-  commands.push({name: '-d2'});
-  
+  commands.push({
+    name: '-d2'
+  });
+
   let frameCount = data.toString('utf8').split('image #').length - 1;
   if (frameCount <= 4) return commands;
-  commands.push({name: '--delete'});
+  commands.push({
+    name: '--delete'
+  });
 
   for (let i = 1; i < frameCount; i += n) {
-    commands.push({name: '#' + i});
+    commands.push({
+      name: '#' + i
+    });
   }
 
   return commands;
 }
 
 function isBodyValid(body, type) {
-  if(type === 'modify') {
+  if (type === 'modify') {
     return !!(body && body.url && body.options && Array.isArray(body.options));
-  } else if(type === 'newemote') {
+  } else if (type === 'newemote') {
     return !!(body && body.username && body.file.emoteName && body.file.extension && body.file.content && body.file.width);
   }
 }
