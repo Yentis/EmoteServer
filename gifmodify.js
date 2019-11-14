@@ -29,7 +29,8 @@ exports.createRotatingGIF = function(options) {
         inputGif.frames[0].delayCentisecs, // assuming all frames have the same delay
         200 * options.value / 8, // 100cs per rotation -> 1 rotation per second
         options.name === 'spinrev',
-        { width: inputGif.width, height: inputGif.height },
+        inputGif.width,
+        inputGif.height
       );
       let frames = alignGif(inputGif.frames, interval);
 
@@ -180,12 +181,11 @@ exports.createWigglingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
 
-      let imgWidth = inputGif.frames[0].bitmap.width;
-      options.width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width wiggle room on both sides
-      options.height = inputGif.frames[0].bitmap.height;
-      options.margin = options.width - imgWidth;
+      let imgWidth = inputGif.width;
+      let width = imgWidth + 2 * Math.floor(imgWidth * options.value * 0.1 / 15);
+      let margin = width - imgWidth;
 
-      let {shiftSize, interval, stripeHeight, shift, left} = prepareWiggleVariables(options.margin);
+      let { shiftSize, interval, stripeHeight, shift, left } = prepareWiggleVariables(margin, inputGif.height);
       let frames = alignGif(inputGif.frames, interval);
 
       for (let i = 0; i < frames.length; i++) {
@@ -193,13 +193,11 @@ exports.createWigglingGIF = function(options) {
           new Jimp(frames[i].bitmap),
           shift,
           left,
-          stripeHeight,
-          shiftSize,
-          options
+          { stripeHeight, shiftSize, width, margin },
         );
         setFrameProperties(frames[i], { bitmap: frameData });
         // Set initial wiggle offset for next frame
-        [shift, left] = shiftWiggleStep(shift, left, options.margin, shiftSize);
+        [shift, left] = shiftWiggleStep(shift, left, margin, shiftSize);
       }
       let codec = new GifCodec();
       codec.encodeGif(frames).then(resultGif => {
@@ -225,12 +223,7 @@ exports.createInfiniteGIF = function(options) {
 
       for (let i = 0; i < frames.length; i++) {
         encoder.setDelay(frames[i].delayCentisecs * 10);
-        let frameData = getInfiniteShiftedFrameData(
-          frames[i].bitmap,
-          scales,
-          frames[i].bitmap.width,
-          frames[i].bitmap.height
-        );
+        let frameData = getInfiniteShiftedFrameData(frames[i].bitmap, scales);
         encoder.addFrame(frameData.data);
         // Shift scales for next frame
         scales = shiftInfiniteScales(scales, scaleDiff, scaleStep);
@@ -264,13 +257,13 @@ exports.createSlidingGIF = function(options) {
   return new Promise((resolve, reject) => {
     getGifFromBuffer(options.buffer).then(inputGif => {
       let width = inputGif.width;
-      let { interval, direction, shift, shiftSize } = prepareSlidingVariables(options, width);
+      let { interval, shift, shiftSize } = prepareSlidingVariables(width);
       let frames = alignGif(inputGif.frames, interval);
       
       for (let i = 0; i < frames.length; i++) {
         let frameData = getShiftedFrameData(new Jimp(frames[i].bitmap), shift);
         setFrameProperties(frames[i], { bitmap: frameData });
-        shift = (shift + direction * shiftSize) % width;
+        shift = (shift + options.value * shiftSize) % width;
       }
       let codec = new GifCodec();
       codec.encodeGif(frames).then(resultGif => {
@@ -298,7 +291,8 @@ exports.createRotatingPNG = function(options) {
         options.value, // delay
         100, // 100cs per rotation -> 1 rotation per second
         options.name === 'spinrev',
-        { width, height }
+        width,
+        height
       );
       let encoder = new GIFEncoder(max, max);
       image.resize(width, height);
@@ -321,16 +315,16 @@ exports.createRotatingPNG = function(options) {
   });
 };
 
-function prepareRotatingVariables(delay, centisecsPerRotation, reverse, options) {
+function prepareRotatingVariables(delay, centisecsPerRotation, reverse, width, height) {
   let degrees = 360 * delay / centisecsPerRotation;
   let interval = Math.floor(360 / degrees);
   degrees *= reverse ? 1 : -1;
-  let margin = (options.width - options.height) / 2;
-  if (options.height > options.width) margin *= -1;
+  let margin = (width - height) / 2;
+  if (height > width) margin *= -1;
   return {
     degrees,
     interval,
-    max: Math.max(options.width, options.height),
+    max: Math.max(width, height),
     margin,
   };
 }
@@ -423,22 +417,21 @@ exports.createWigglingPNG = function(options) {
       let { width: imgWidth, height } = preparePNGVariables(options, image.bitmap);
       image.resize(imgWidth, height);
 
-      options.height = height;
-      options.width = imgWidth + 2 * Math.floor(imgWidth / 15); // ~6.6% of width is wiggle room for both sides
-      options.margin = options.width - imgWidth;
+      let width = imgWidth + 2 * Math.floor(imgWidth * options.value * 0.1 / 15); // ~6.6% of width is wiggle room for both sides
+      let margin = width - imgWidth;
 
-      let encoder = new GIFEncoder(options.width, height);
-      let {shiftSize, interval, stripeHeight, shift, left} = prepareWiggleVariables(options.margin);
+      let encoder = new GIFEncoder(width, height);
+      let { shiftSize, interval, stripeHeight, shift, left } = prepareWiggleVariables(margin, height);
 
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
-      setEncoderProperties(encoder, options.value * 5);
+      setEncoderProperties(encoder, 80);
 
       for (let i = 0; i < interval; i++) {
         // Wiggle frame
-        let frameData = getWiggledFrameData(image, shift, left, stripeHeight, shiftSize, options);
+        let frameData = getWiggledFrameData(image, shift, left, { stripeHeight, shiftSize, width, margin });
         encoder.addFrame(frameData.data);
         // Set initial wiggle offset for next frame
-        [shift, left] = shiftWiggleStep(shift, left, options.margin, shiftSize);
+        [shift, left] = shiftWiggleStep(shift, left, margin, shiftSize);
       }
       encoder.finish();
     }).catch(error => reject(error));
@@ -456,22 +449,21 @@ function shiftWiggleStep(shift, left, margin, shiftSize) {
   return [shift, left];
 }
 
-function prepareWiggleVariables(margin) {
-  let shiftSize = Math.max(1, Math.floor(margin / 6));
+function prepareWiggleVariables(margin, height) {
+  let shiftSize = Math.max(1, margin / 6);
   let interval = 2 * (margin / shiftSize + 4);
-  let stripeHeight = 2 * shiftSize;
+  let stripeHeight = Math.max(1, Math.floor(height / 32));
   let shift = margin / 2; // Initial offset of wiggle
   let left = true;        // true -> go to left
   return { shiftSize, interval, stripeHeight, shift, left };
 }
 
-function getWiggledFrameData(oldFrame, shift, left, stripeHeight, shiftSize, options) {
-  let newFrame = new Jimp(options.width, options.height, 0x00);
-  for (let stripe = 0; stripe < options.height; stripe += stripeHeight) {
-    for (let line = 0; line < stripeHeight; line++) {
-      newFrame.blit(oldFrame, shift, stripe + line, 0, stripe + line, oldFrame.bitmap.width, 1);
-    }
-    [shift, left] = shiftWiggleStep(shift, left, options.margin, shiftSize);
+function getWiggledFrameData(oldFrame, shift, left, options) {
+  let newFrame = new Jimp(options.width, oldFrame.bitmap.height, 0x00);
+  // Wiggle each stripe
+  for (let stripe = 0; stripe < oldFrame.bitmap.height; stripe += options.stripeHeight) {
+    newFrame.blit(oldFrame, shift, stripe, 0, stripe, oldFrame.bitmap.width, options.stripeHeight);
+    [shift, left] = shiftWiggleStep(shift, left, options.margin, options.shiftSize);
   }
   return newFrame.bitmap;
 }
@@ -492,7 +484,7 @@ exports.createInfinitePNG = function(options) {
       let scales = resetInfiniteScales(scalesAmount, scaleDiff, scaleStep);
 
       for (let i = 0; i < frames; i++) {
-        let frameData = getInfiniteShiftedFrameData(image.bitmap, scales, width, height);
+        let frameData = getInfiniteShiftedFrameData(image.bitmap, scales);
         encoder.addFrame(frameData.data);
         // Shift scales for next frame
         scales = shiftInfiniteScales(scales, scaleDiff, scaleStep);
@@ -503,17 +495,17 @@ exports.createInfinitePNG = function(options) {
   });
 };
 
-function getInfiniteShiftedFrameData(frameBitmap, scales, width, height) {
-  let newFrame = new Jimp(width, height, 0x00);
+function getInfiniteShiftedFrameData(frameBitmap, scales) {
+  let newFrame = new Jimp(frameBitmap.width, frameBitmap.height, 0x00);
   // Add appropriate frame with each depth scale
   for (let depth = 0; depth < scales.length; depth++) {
     let scaledFrame = new Jimp(frameBitmap);
     scaledFrame.scale(scales[depth]);
-    let dx = (scaledFrame.bitmap.width - width) / 2;
-    let dy = (scaledFrame.bitmap.height - height) / 2;
+    let dx = (scaledFrame.bitmap.width - frameBitmap.width) / 2;
+    let dy = (scaledFrame.bitmap.height - frameBitmap.height) / 2;
     // Blit frame properly with respect to the scale
     if (scales[depth] > 1) {
-      newFrame.blit(scaledFrame, 0, 0, dx, dy, width, height);
+      newFrame.blit(scaledFrame, 0, 0, dx, dy, frameBitmap.width, frameBitmap.height);
     } else {
       newFrame.blit(scaledFrame, -dx, -dy);
     }
@@ -525,28 +517,27 @@ exports.createSlidingPNG = function(options) {
   return new Promise((resolve, reject) => {
     Jimp.read(options.buffer).then(image => {
       let { width, height, encoder } = preparePNGVariables(options, image.bitmap);
-      let { interval, direction, shift, shiftSize } = prepareSlidingVariables(options, width);
+      let { interval, shift, shiftSize } = prepareSlidingVariables(width);
       image.resize(width, height);
       getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer));
       setEncoderProperties(encoder, 80);
       for (let i = 0; i < interval; i++) {
         let frameData = getShiftedFrameData(image, Math.floor(shift));
         encoder.addFrame(frameData.data);
-        shift = (shift + direction * shiftSize) % width;
+        shift = (shift + options.value * shiftSize) % width;
       }
       encoder.finish();
     }).catch(error => reject(error));
   });
 };
 
-function prepareSlidingVariables(options, width) {
+function prepareSlidingVariables(width) {
   let interval = 16;
   return {
     interval,
-    direction: options.value,
     shift: 0,
     shiftSize: width / interval,
-  }
+  };
 }
 
 function getShiftedFrameData(oldFrame, shift) {

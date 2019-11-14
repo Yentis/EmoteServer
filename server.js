@@ -178,7 +178,7 @@ function getCommands(options) {
         let shouldProcessAfter = false;
         split.forEach(axis => {
           if (axis >= 1) shouldProcessAfter = true;
-        })
+        });
 
         if (shouldProcessAfter) {
           normal.push(command);
@@ -218,11 +218,25 @@ function getCommands(options) {
         command.param = direction;
         special.push(command);
         break;
+      case 'wiggle':
+        let size = 2;
+
+        if (option[1]) {
+          let sizeName = option[1];
+
+          if (sizeName === 'big') size = 4;
+          else if (sizeName === 'bigger') size = 6;
+          else if (sizeName === 'huge') size = 10;
+        }
+
+        command.name = option[0];
+        command.param = size;
+        special.push(command);
+        break;
       case 'spin':
       case 'spinrev':
       case 'shake':
       case 'rainbow':
-      case 'wiggle':
       case 'infinite':
         let speed = 8;
 
