@@ -240,6 +240,7 @@ function getCommands(options) {
       case 'rainbow':
       case 'infinite':
       case 'slide':
+      case 'sliderev':
         let speed = 8;
 
         if (option[1]) {
@@ -383,6 +384,7 @@ function processSpecialCommand(command) {
         gifhelper.infiniteEmote(command).then(resolve).catch(reject);
         break;
       case 'slide':
+      case 'sliderev':
         gifhelper.slideEmote(command).then(resolve).catch(reject);
         break;
       default:

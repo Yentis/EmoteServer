@@ -17,11 +17,12 @@ exports.createSlidingGIF = (options) => {
             } = prepareSlidingVariables(width, options.value);
             let frames = gifhelper.alignGif(inputGif.frames, interval);
 
+            let direction = options.name === 'sliderev' ? 1 : -1;
             for (let i = 0; i < frames.length; i++) {
                 encoder.setDelay(frames[i].delayCentisecs * 10);
                 let shiftedBitmap = getShiftedFrameData(new Jimp(frames[i].bitmap), shift);
                 encoder.addFrame(shiftedBitmap.data);
-                shift = (shift - 1 * shiftSize) % width;
+                shift = (shift + direction * shiftSize) % width;
             }
 
             encoder.finish();
@@ -47,10 +48,11 @@ exports.createSlidingPNG = (options) => {
             gifhelper.getBuffer(encoder.createReadStream()).then(resolve).catch(reject);
             gifhelper.setEncoderProperties(encoder, 40);
 
+            let direction = options.name === 'sliderev' ? 1 : -1;
             for (let i = 0; i < interval; i++) {
                 let frameData = getShiftedFrameData(image, shift);
                 encoder.addFrame(frameData.data);
-                shift = (shift - 1 * shiftSize) % width;
+                shift = (shift + direction * shiftSize) % width;
             }
 
             encoder.finish();
