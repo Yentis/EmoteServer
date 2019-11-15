@@ -162,6 +162,15 @@ exports.slideEmote = (options) => {
   }
 }
 
+const rain = require('./modifiers/rain.js');
+exports.rainEmote = (options) => {
+  if (options.type === 'gif') {
+    return rain.createRainingGIF(options);
+  } else {
+    return rain.createRainingPNG(options);
+  }
+}
+
 function getSizeFromOptions(options) {
   let widthModifier = 1;
   let heightModifier = 1;
