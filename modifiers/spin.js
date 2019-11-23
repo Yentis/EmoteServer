@@ -5,14 +5,14 @@ const gifhelper = require('../gifhelper.js');
 exports.createSpinningGIF = (options) => {
     return new Promise((resolve, reject) => {
         gifhelper.getGifFromBuffer(options.buffer).then(inputGif => {
-            let encoder = new GIFEncoder(inputGif.width, inputGif.height);
+            let max = Math.max(inputGif.width, inputGif.height);
+            let encoder = new GIFEncoder(max, max);
             gifhelper.getBuffer(encoder.createReadStream()).then(buffer => resolve(buffer)).catch(reject);
             gifhelper.setEncoderProperties(encoder);
 
             let {
                 degrees,
                 interval,
-                max,
                 margin
             } = prepareSpinVariables(
                 inputGif.frames[0].delayCentisecs, // assuming all frames have the same delay
