@@ -170,9 +170,7 @@ app.post('/modifygif', jsonParser, (req, res) => {
 function getCommands(options) {
   let normal = [];
   let special = [];
-  let priority = [{
-    name: '-U'
-  }];
+  let priority = [];
   let command = {};
 
   options.forEach((option) => {
@@ -185,7 +183,7 @@ function getCommands(options) {
         let split = command.param.toString().split('x');
         let shouldProcessAfter = false;
         split.forEach(axis => {
-          if (axis >= 1) shouldProcessAfter = true;
+          if (axis > 1) shouldProcessAfter = true;
         });
 
         if (shouldProcessAfter) {
@@ -216,7 +214,7 @@ function getCommands(options) {
         normal.push(command);
         break;
       case 'hyperspeed':
-        command.name = '-I';
+        command.name = 'hyperspeed';
         normal.push(command);
         break;
       case 'wiggle':
@@ -271,41 +269,50 @@ function getCommands(options) {
 }
 
 function processCommands(data) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     let fileType = data.url.endsWith('gif') ? 'gif' : 'png';
     let buffer = data.url;
+    let size;
 
-    if (fileType === 'png') {
-      let size;
-      if (data.commands.priority[1]) {
-        size = data.commands.priority[1].param;
+    try {
+      if (fileType === 'gif') {
+        // Priority commands (namely resizing) must be done before unoptimizing or it will cause glitches
+        if (data.commands.priority.length > 0) {
+          buffer = await modifyGif(buffer, data.commands.priority);
+        }
+
+        buffer = await modifyGif(buffer, [{
+          name: '--unoptimize'
+        }]);
       }
-      processSpecialCommands({
+
+      if (fileType === 'png') {
+        let scaleIndex = getCommandIndexByProperty(data.commands.priority, 'name', '--scale');
+        if (typeof scaleIndex !== 'undefined') {
+          size = data.commands.priority[scaleIndex].param;
+        }
+      }
+
+      if (data.commands.special.length > 0) {
+        buffer = await processSpecialCommands({
           data: buffer,
           commands: data.commands.special,
           fileType,
           size
-        })
-        .then(buffer => {
-          processNormalCommands(buffer, data.commands.normal)
-            .then(buffer => resolve(buffer))
-            .catch(err => reject(err));
-        }).catch(err => reject(err));
-    } else {
-      //Resize and unoptimize
-      modifyGif(buffer, data.commands.priority)
-        .then(buffer => {
-          processSpecialCommands({
-              data: buffer,
-              commands: data.commands.special,
-              fileType: fileType
-            })
-            .then(buffer => {
-              processNormalCommands(buffer, data.commands.normal)
-                .then(buffer => resolve(buffer))
-                .catch(err => reject(err));
-            }).catch(err => reject(err));
-        }).catch(err => reject(err));
+        });
+      }
+
+      if (data.commands.normal.length > 0) {
+        buffer = await processNormalCommands(buffer, data.commands.normal);
+      }
+
+      buffer = await modifyGif(buffer, [{
+        name: '--optimize'
+      }]);
+
+      resolve(buffer);
+    } catch (err) {
+      reject(err);
     }
   });
 }
@@ -368,8 +375,6 @@ function processSpecialCommands(options) {
 
 function processSpecialCommand(command) {
   return new Promise((resolve, reject) => {
-    let type = '';
-
     logger.log('info', 'Command name: ' + command.name);
     switch (command.name) {
       case 'spin':
@@ -404,28 +409,30 @@ function processSpecialCommand(command) {
 
 function processNormalCommands(data, commands) {
   return new Promise((resolve, reject) => {
-    if (commands.length > 0) {
-      modifyGif(data, commands)
-        .then((buffer) => {
-          //an asterisk, signifying info data
-          if (buffer[0] === 42) {
-            commands = commands.filter(trimInfoTag);
-            commands = removeEveryOtherFrame(2, commands, buffer);
-            commands.push({
-              name: '-O'
-            })
-            modifyGif(data, commands)
-              .then((buffer) => {
-                resolve(buffer);
-              }).catch(err => reject(err));
-          } else resolve(buffer);
-        }).catch(err => reject(err));
-    } else resolve(data);
+    modifyGif(data, [{
+        name: '-I'
+      }])
+      .then((info) => {
+        commands.unshift({
+          name: '-U'
+        });
+
+        let hyperspeedIndex = getCommandIndexByProperty(commands, 'name', 'hyperspeed');
+        if (typeof hyperspeedIndex !== 'undefined') {
+          commands.splice(hyperspeedIndex, 1);
+          commands = removeEveryOtherFrame(2, commands, info);
+        }
+
+        modifyGif(data, commands)
+          .then(resolve).catch(reject);
+      }).catch(reject);
   });
 }
 
-function trimInfoTag(command) {
-  return command.name !== '-I';
+function getCommandIndexByProperty(commands, property, name) {
+  for (let i = 0; i < commands.length; i++) {
+    if (commands[i][property] === name) return i;
+  }
 }
 
 function removeEveryOtherFrame(n, commands, data) {
