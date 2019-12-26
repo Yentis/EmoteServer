@@ -232,6 +232,11 @@ function getCommands(options) {
         command.param = size;
         special.push(command);
         break;
+      case 'rain':
+        command.name = option[0];
+        command.param = option[1] === 'glitter' ? 1 : 0;
+        special.push(command);
+        break;
       case 'spin':
       case 'spinrev':
       case 'shake':
@@ -391,6 +396,9 @@ function processSpecialCommand(command) {
       case 'slide':
       case 'sliderev':
         gifhelper.slideEmote(command).then(resolve).catch(reject);
+        break;
+      case 'rain':
+        gifhelper.rainEmote(command).then(resolve).catch(reject);
         break;
       default:
         resolve(command.buffer);
