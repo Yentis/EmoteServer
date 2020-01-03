@@ -83,6 +83,7 @@ function readFile(file) {
         fileReader.addEventListener('load', (event) => {
             let content = event.target.result;
             let extensionSplit = file.name.split('.');
+            if (extensionSplit.length === 0) extensionSplit = ['png'];
             let extension = '.' + extensionSplit[extensionSplit.length-1];
             let img = new Image;
             let width;
