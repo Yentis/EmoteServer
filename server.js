@@ -21,6 +21,7 @@ const logger = winston.createLogger({
     new winston.transports.Console()
   ]
 });
+module.exports.localBuild = true;
 
 app.use(function (req, res, next) {
   res.setHeader('Access-Control-Allow-Origin', 'https://discordapp.com');
@@ -464,9 +465,11 @@ function isBodyValid(body, type) {
 }
 
 // listen for requests :)
-app.listen(process.env.PORT);
-//app.listen(8080);
-setInterval(() => {
-  http.get(`http://${process.env.PROJECT_DOMAIN}.glitch.me/`);
-  //http.get(`http://localhost:8080/`);
-}, 280000);
+if (this.localBuild) {
+  app.listen(8080);
+} else {
+  app.listen(process.env.PORT);
+  setInterval(() => {
+    http.get(`http://${process.env.PROJECT_DOMAIN}.glitch.me/`);
+  }, 280000);
+}
