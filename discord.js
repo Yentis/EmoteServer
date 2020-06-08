@@ -10,7 +10,8 @@ const clientSecret = localBuild ? 'SECRET_HERE' : process.env.CLIENT_SECRET;
 const scopes = 'identify';
 
 router.get('/', (req, res) => {
-    if (!req.query.code) {
+    res.render('index');
+    /*if (!req.query.code) {
         res.render('index');
         return;
     }
@@ -23,7 +24,7 @@ router.get('/', (req, res) => {
             res.render('index', {username: `${user.username}#${user.discriminator}`});
         }).catch(error => res.end(error));
     })
-    .catch(error => res.end(error));
+    .catch(error => res.end(error));*/
 });
 
 router.get('/login', (req, res) => {

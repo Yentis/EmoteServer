@@ -1,6 +1,7 @@
 'use strict';
 
 let emoteName;
+let username;
 
 document.querySelector('form').addEventListener('submit', function (event) {
     event.preventDefault();
@@ -10,13 +11,20 @@ document.querySelector('form').addEventListener('submit', function (event) {
     document.getElementById("submit").disabled = true;
     emoteName = filterEmoteName(document.getElementById('emotename').value);
 
+    username = document.getElementById('username').value;
+    if (username.trim().length === 0) {
+        message.innerHTML = 'Please enter your username before submitting.';
+        resetSubmit();
+        return;
+    }
+
     let files = document.getElementById('file').files;
 
-    if(files.length === 0) {
+    if (files.length === 0) {
         message.innerHTML = 'Please select an emote before submitting.';
         resetSubmit();
         return;
-    } else if(emoteName.length === 0) {
+    } else if (emoteName.length === 0) {
         message.innerHTML = 'Please enter an emote name before submitting.';
         resetSubmit();
         return;

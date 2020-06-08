@@ -1,17 +1,13 @@
 html
     head
         title Upload a new emote
-        script.
-            let username = '#{username}';
-            if (!username || username === 'undefined#undefined') {
-                window.location.href = '/newemote/login';
-            }
         link(rel='stylesheet' href='css/style.css')
     body
         h1 Upload a new emote
-        h2= 'Logged in as ' + username
 
         form(action='/' method='POST')
+            label(for='username') Username:
+            input(name='username' id='username' type='text')
             label(for='file') Select your emote (png or gif):
             input(name='file' id='file' type='file' accept='.png,.gif')
             label(for='emotename') Emote name:
@@ -21,30 +17,37 @@ html
         p(id='message')= message
         
         div
-            h2 Rules
-            h3 Optimizing your emote
+            h1 Rules
+            h2 Optimizing your emote
             p Before uploading, please cut all transparent pixels in your emote and resize the smallest dimension to 128px for optimal viewing in Discord.
-            p For gifs use https://ezgif.com
-            <video height=320 width=480 controls>
-                <source src="https://cdn.glitch.com/2970e863-aea4-4e6c-acda-273a4b0617fe%2Fresize-gif.mp4?v=1574642807094" type="video/mp4">
-            </video>
             p For pngs use Photoshop or Paint.NET
-            h3 &lt;CharacterName&gt;&lt;Modifiers&gt;&lt;Action&gt;
-            h3 Words to use for actions
-            p See https://yentis.github.io/emotes to find the words being used for a certain action, if none exist you can choose for yourself.
-            h3 Finding character names
-            p If you don't know what the character in the image is called you can try reverse image searching your emote.
-            h3 Duplicates
-            p Just append a number. If emote PepoYay already exists name your emote PepoYay2
-            h3 Background
+            p For gifs use https://ezgif.com using the steps below:
+            div(class='center')
+                <video height=320 width=480 controls>
+                    <source src="https://cdn.glitch.com/2970e863-aea4-4e6c-acda-273a4b0617fe%2Fresize-gif.mp4?v=1574642807094" type="video/mp4">
+                </video>
+            h2 Background
             p Emote backgrounds should always be transparent, even for gifs.
-            h3 Examples:
-            div(class="example")
-                img(src="https://yentis.github.io/emotes/images/175.png")
-                p KumiHeart
-            div(class="example")
-                img(src="https://yentis.github.io/emotes/images/90.png")
-                p BlobHyperSweat
+            h2 Naming
+            p &lt;CharacterName&gt;&lt;Modifiers&gt;&lt;Actions&gt;
+            p(style='white-space:pre;')
+                | Character name: Blob
+                | Modifier: Hyper
+                | Action: Sweat
+            p BlobHyperSweat
+            h2 Words to use for actions
+            p See https://yentis.github.io/emotes to find the words being used for a certain action, if none exist you can choose for yourself.
+            h2 Finding character names
+            p If you don't know what the character in the image is called you can try reverse image searching your emote.
+            h2 Duplicates
+            p Just append a number. If emote PepoYay already exists name your emote PepoYay2
+            h2 Examples:
+            div(id='examples')
+                div
+                    img(src="https://yentis.github.io/emotes/images/175.png")
+                    p KumiHeart
+                div
+                    img(src="https://yentis.github.io/emotes/images/90.png")
+                    p BlobHyperSweat
     script(src='js/jquery-3.3.1.min.js')
-    script(src='js/script.js').
-        let username = '#{username}';
+    script(src='js/script.js')
